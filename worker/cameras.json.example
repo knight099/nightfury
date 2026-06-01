@@ -1,0 +1,36 @@
+{
+  "cameras": [
+    {
+      "camera_id": "550e8400-e29b-41d4-a716-446655440001",
+      "org_id": "550e8400-e29b-41d4-a716-446655440000",
+      "site_id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Main Entrance Cam",
+      "site_name": "Warehouse Mumbai",
+      "ingest_mode": "rtsp_pull",
+      "rtsp_url": "rtsp://admin:password@192.168.1.100:554/stream1",
+      "enabled_events": ["person", "vehicle", "intrusion", "loitering"],
+      "detection_zones": [
+        {
+          "name": "Entrance Area",
+          "points": [[100, 200], [600, 200], [600, 600], [100, 600]]
+        }
+      ],
+      "sensitivity": "medium",
+      "timezone": "Asia/Kolkata",
+      "idle_fps": 1.0,
+      "active_fps": 5.0
+    },
+    {
+      "camera_id": "550e8400-e29b-41d4-a716-446655440003",
+      "org_id": "550e8400-e29b-41d4-a716-446655440000",
+      "site_id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Parking Lot Cam",
+      "site_name": "Warehouse Mumbai",
+      "ingest_mode": "rtmp_push",
+      "stream_key": "nw_cam_abc123def456",
+      "enabled_events": ["person", "vehicle", "loitering"],
+      "sensitivity": "low",
+      "timezone": "Asia/Kolkata"
+    }
+  ]
+}

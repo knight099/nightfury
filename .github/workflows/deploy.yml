@@ -1,0 +1,120 @@
+name: Deploy to AWS App Runner
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+jobs:
+  deploy-backend:
+    name: Build & Deploy Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        working-directory: backend
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/nightwatch-backend:${{ github.sha }}
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Deploy to App Runner (backend)
+        run: |
+          aws apprunner update-service \
+            --service-arn ${{ secrets.APPRUNNER_BACKEND_ARN }} \
+            --source-configuration "{
+              \"ImageRepository\": {
+                \"ImageIdentifier\": \"$IMAGE_URI\",
+                \"ImageRepositoryType\": \"ECR\",
+                \"ImageConfiguration\": {
+                  \"Port\": \"8080\",
+                  \"RuntimeEnvironmentSecrets\": {
+                    \"DATABASE_URL\":          \"${{ secrets.DATABASE_URL }}\",
+                    \"REDIS_URL\":             \"${{ secrets.REDIS_URL }}\",
+                    \"SECRET_KEY\":            \"${{ secrets.SECRET_KEY }}\",
+                    \"GEMINI_API_KEY\":        \"${{ secrets.GEMINI_API_KEY }}\",
+                    \"GCS_BUCKET_NAME\":       \"${{ secrets.GCS_BUCKET_NAME }}\",
+                    \"WORKER_API_KEY\":        \"${{ secrets.WORKER_API_KEY }}\",
+                    \"SUPER_ADMIN_USERNAME\":  \"${{ secrets.SUPER_ADMIN_USERNAME }}\",
+                    \"SUPER_ADMIN_PASSWORD\":  \"${{ secrets.SUPER_ADMIN_PASSWORD }}\",
+                    \"SENDGRID_API_KEY\":      \"${{ secrets.SENDGRID_API_KEY }}\",
+                    \"GUPSHUP_API_KEY\":       \"${{ secrets.GUPSHUP_API_KEY }}\"
+                  }
+                }
+              }
+            }"
+
+      - name: Wait for backend deployment
+        run: |
+          aws apprunner wait service-updated \
+            --service-arn ${{ secrets.APPRUNNER_BACKEND_ARN }}
+
+  deploy-frontend:
+    name: Build & Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend image
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/nightwatch-frontend:${{ github.sha }}
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+            -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Deploy to App Runner (frontend)
+        run: |
+          aws apprunner update-service \
+            --service-arn ${{ secrets.APPRUNNER_FRONTEND_ARN }} \
+            --source-configuration "{
+              \"ImageRepository\": {
+                \"ImageIdentifier\": \"$IMAGE_URI\",
+                \"ImageRepositoryType\": \"ECR\",
+                \"ImageConfiguration\": {
+                  \"Port\": \"3000\",
+                  \"RuntimeEnvironmentVariables\": {
+                    \"NEXT_PUBLIC_API_URL\": \"${{ secrets.NEXT_PUBLIC_API_URL }}\"
+                  }
+                }
+              }
+            }"
+
+      - name: Wait for frontend deployment
+        run: |
+          aws apprunner wait service-updated \
+            --service-arn ${{ secrets.APPRUNNER_FRONTEND_ARN }}

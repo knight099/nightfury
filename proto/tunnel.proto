@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package nightwatch.tunnel.v1;
+
+option go_package = "github.com/nightwatch/proto/gen/go/tunnelpb";
+
+service Tunnel {
+  // Bidi-stream: agent sends frames + control; relay sends control acks.
+  rpc Stream(stream AgentMessage) returns (stream RelayMessage);
+}
+
+message AgentMessage {
+  oneof kind {
+    Hello       hello       = 1;
+    CameraOpen  camera_open = 2;
+    Frame       frame       = 3;
+    CameraClose camera_close = 4;
+    Heartbeat   heartbeat   = 5;
+  }
+}
+
+message RelayMessage {
+  oneof kind {
+    HelloAck    hello_ack    = 1;
+    CameraAck   camera_ack   = 2;
+    Disconnect  disconnect   = 3;
+    Pong        pong         = 4;
+  }
+}
+
+message Hello {
+  string agent_version = 1;
+  string machine_id    = 2;
+}
+
+message HelloAck {
+  string session_id = 1;
+}
+
+message CameraOpen {
+  string camera_id = 1;
+  string codec     = 2;
+  uint32 width     = 3;
+  uint32 height    = 4;
+  uint32 fps       = 5;
+}
+
+message CameraAck {
+  string camera_id = 1;
+  bool   accepted  = 2;
+  string reason    = 3;
+}
+
+message Frame {
+  string camera_id = 1;
+  bytes  payload   = 2;
+  int64  monotonic_us = 3;
+  bool   keyframe  = 4;
+}
+
+message CameraClose {
+  string camera_id = 1;
+  string reason    = 2;
+}
+
+message Heartbeat {
+  int64 monotonic_us = 1;
+}
+
+message Pong {
+  int64 monotonic_us = 1;
+}
+
+message Disconnect {
+  string reason = 1;
+  bool   reauth_required = 2;
+}

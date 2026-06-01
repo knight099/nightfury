@@ -1,0 +1,9 @@
+[project]
+name = "nightwatch-backend"
+version = "0.1.0"
+description = "Nightwatch AI CCTV Event Intelligence API"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
