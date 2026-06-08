@@ -1,4 +1,15 @@
+import os
 from pydantic_settings import BaseSettings
+
+
+def _default_db_url() -> str:
+    # Vercel-Supabase integration sets POSTGRES_URL — convert scheme for asyncpg
+    pg_url = os.environ.get("POSTGRES_URL", "")
+    if pg_url:
+        return pg_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+    return "postgresql+asyncpg://nightwatch:nightwatch@localhost:5432/nightwatch"
 
 
 class Settings(BaseSettings):
@@ -6,7 +17,7 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = "change-me"
 
-    database_url: str = "postgresql+asyncpg://nightwatch:nightwatch@localhost:5432/nightwatch"
+    database_url: str = _default_db_url()
     db_pool_size: int = 10
     db_max_overflow: int = 20
 
