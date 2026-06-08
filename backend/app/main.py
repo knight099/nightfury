@@ -59,9 +59,11 @@ async def seed_super_admin():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    # Schema is managed by Alembic. Run `alembic upgrade head` before booting
-    # the API in any environment (dev, staging, prod).
-    await seed_super_admin()
+    try:
+        await seed_super_admin()
+    except Exception:
+        logger.exception("seed_super_admin failed — continuing startup")
+
     scheduler = None
     if APSCHEDULER_AVAILABLE:
         try:
@@ -81,7 +83,10 @@ async def lifespan(app: FastAPI):
             scheduler.shutdown(wait=False)
         except Exception:
             logger.exception("Error shutting down digest scheduler")
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except Exception:
+        pass
 
 
 app = FastAPI(
