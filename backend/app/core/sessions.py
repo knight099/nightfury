@@ -175,26 +175,32 @@ class SessionManager:
     # ─── Brute-force Protection ────────────────────────────────────────────
 
     async def record_failed_login(self, username: str, ip: str):
-        """Record a failed login attempt."""
-        redis_client = await get_redis()
-        key = f"login_failures:{username}"
-        count = await redis_client.incr(key)
-        await redis_client.expire(key, LOCKOUT_DURATION)
-
-        if count >= LOCKOUT_THRESHOLD:
-            lockout_key = f"lockout:{username}"
-            await redis_client.setex(lockout_key, LOCKOUT_DURATION, "1")
-            logger.warning(f"Account locked: {username} (IP: {ip})")
+        try:
+            redis_client = await get_redis()
+            key = f"login_failures:{username}"
+            count = await redis_client.incr(key)
+            await redis_client.expire(key, LOCKOUT_DURATION)
+            if count >= LOCKOUT_THRESHOLD:
+                lockout_key = f"lockout:{username}"
+                await redis_client.setex(lockout_key, LOCKOUT_DURATION, "1")
+                logger.warning(f"Account locked: {username} (IP: {ip})")
+        except Exception:
+            logger.warning("Redis unavailable — skipping failed login record for %s", username)
 
     async def is_locked_out(self, username: str) -> bool:
-        """Check if account is locked due to failed attempts."""
-        redis_client = await get_redis()
-        return await redis_client.exists(f"lockout:{username}")
+        try:
+            redis_client = await get_redis()
+            return bool(await redis_client.exists(f"lockout:{username}"))
+        except Exception:
+            logger.warning("Redis unavailable — skipping lockout check for %s", username)
+            return False
 
     async def clear_failed_attempts(self, username: str):
-        """Clear failed login count on successful login."""
-        redis_client = await get_redis()
-        await redis_client.delete(f"login_failures:{username}")
+        try:
+            redis_client = await get_redis()
+            await redis_client.delete(f"login_failures:{username}")
+        except Exception:
+            logger.warning("Redis unavailable — skipping clear for %s", username)
 
 
 session_manager = SessionManager()
