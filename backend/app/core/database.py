@@ -11,8 +11,13 @@ def _get_engine():
     global _engine, _session_factory
     if _engine is None:
         connect_args = {}
-        if "supabase.co" in settings.database_url:
+        url = settings.database_url
+        # pooler.supabase.com = Supavisor (connection pooler) — SSL not needed
+        # db.supabase.co = direct connection — SSL required
+        if "db.supabase.co" in url:
             connect_args = {"ssl": "require"}
+        elif "pooler.supabase.com" in url:
+            connect_args = {"ssl": False}
         _engine = create_async_engine(
             settings.database_url,
             poolclass=NullPool,

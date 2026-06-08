@@ -3,12 +3,16 @@ from pydantic_settings import BaseSettings
 
 
 def _default_db_url() -> str:
-    # Vercel-Supabase integration sets POSTGRES_URL — convert scheme for asyncpg
+    from urllib.parse import urlparse, urlunparse
     pg_url = os.environ.get("POSTGRES_URL", "")
     if pg_url:
-        return pg_url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
-            "postgresql://", "postgresql+asyncpg://", 1
-        )
+        # Strip query params (pgbouncer=true, sslmode=require, etc.)
+        # asyncpg handles SSL via connect_args, not URL params
+        parsed = urlparse(pg_url)
+        clean = urlunparse(parsed._replace(query=""))
+        clean = clean.replace("postgres://", "postgresql+asyncpg://", 1)
+        clean = clean.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return clean
     return "postgresql+asyncpg://nightwatch:nightwatch@localhost:5432/nightwatch"
 
 
