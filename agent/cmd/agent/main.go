@@ -23,12 +23,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/nightwatch/agent/internal/config"
+	"github.com/nightwatch/agent/internal/discovery"
 	"github.com/nightwatch/agent/internal/localui"
 	"github.com/nightwatch/agent/internal/pairing"
 	"github.com/nightwatch/agent/internal/store"
 	"github.com/nightwatch/agent/internal/supervisor"
 	"github.com/nightwatch/agent/internal/transport"
 )
+
+// discoveryInterval is how often the agent rescans the LAN for ONVIF
+// cameras and reports results to the backend (override via env).
+const defaultDiscoveryInterval = time.Minute
 
 const agentVersion = "0.1.0"
 
@@ -128,6 +133,15 @@ func main() {
 	}
 	signalURL := signalScheme + "://" + relayHost(relayAddr) + "/signal"
 	fallback := transport.NewWebRTC(signalURL, tok.DeviceToken)
+
+	interval := defaultDiscoveryInterval
+	if raw := os.Getenv("AGENT_DISCOVERY_INTERVAL"); raw != "" {
+		if d, derr := time.ParseDuration(raw); derr == nil && d > 0 {
+			interval = d
+		}
+	}
+	go discovery.RunReporter(ctx, backend, tok.DeviceToken, interval)
+	go discovery.RunResolver(ctx, backend, tok.DeviceToken, 10*time.Second)
 
 	cams := loadCamerasFromEnv()
 	if len(cams) == 0 {

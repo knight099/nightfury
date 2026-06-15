@@ -8,6 +8,7 @@ import type {
   DigestListResponse,
   DigestPreferences,
   DigestRequest,
+  DiscoverResponse,
   Event,
   EventStats,
   PaginatedResponse,
@@ -340,9 +341,26 @@ class ApiClient {
 
   async registerAgentCamera(
     agentId: string,
-    body: { name: string; site_id: string; rtsp_url: string }
-  ): Promise<{ camera_id: string }> {
-    return this.request<{ camera_id: string }>(`/api/agents/${agentId}/cameras`, {
+    body: { name: string; site_id?: string; rtsp_url: string }
+  ): Promise<{ camera_id: string; status: string }> {
+    return this.request<{ camera_id: string; status: string }>(`/api/agents/${agentId}/cameras`, {
+      method: "POST",
+      body: JSON.stringify({ ...body, site_id: body.site_id || undefined }),
+    });
+  }
+
+  async discoverAgentCameras(agentId: string): Promise<DiscoverResponse> {
+    return this.request<DiscoverResponse>(`/api/agents/${agentId}/discover`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  async registerAgentCameraFromOnvif(
+    agentId: string,
+    body: { name: string; site_id?: string; onvif_xaddr: string; user?: string; pass?: string }
+  ): Promise<{ camera_id: string; status: string }> {
+    return this.request<{ camera_id: string; status: string }>(`/api/agents/${agentId}/cameras`, {
       method: "POST",
       body: JSON.stringify(body),
     });

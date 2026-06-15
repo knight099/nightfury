@@ -54,3 +54,7 @@ coverage/
 
 # Alembic compiled
 backend/alembic/versions/__pycache__/
+
+# Agent local secrets / build output
+agent/state/
+agent/nightwatch-agent

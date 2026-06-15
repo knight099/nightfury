@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import { RefreshCw, Trash2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface UsageEntry {
   timestamp: string;
@@ -177,7 +178,7 @@ export default function UsagePage() {
             </div>
 
             {isLoading ? (
-              <div className="p-6 text-center text-sm text-[#666666]">Loading...</div>
+              <div className="p-4 space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 rounded-md" />)}</div>
             ) : history.length === 0 ? (
               <div className="p-6 text-center text-sm text-[#666666]">No usage yet. Try the <a href="/test-camera" className="text-[#1E90FF] hover:underline">Test Camera</a>.</div>
             ) : (
@@ -237,7 +238,7 @@ function Stat({ label, value, color = "#F5F5F5" }: { label: string; value: strin
 }
 
 function OrgUsageView({ data, loading, days }: { data: OrgUsageResponse | undefined; loading: boolean; days: number }) {
-  if (loading) return <p className="text-sm text-[#666666]">Loading...</p>;
+  if (loading) return <div className="space-y-3"><Skeleton className="h-20 rounded-lg" /><Skeleton className="h-40 rounded-lg" /></div>;
   if (!data) return <p className="text-sm text-[#666666]">No data.</p>;
 
   const agg = data.aggregate;
@@ -262,6 +263,7 @@ function OrgUsageView({ data, loading, days }: { data: OrgUsageResponse | undefi
         {data.by_user.length === 0 ? (
           <div className="p-6 text-center text-sm text-[#666666]">No usage in this period.</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-[#0D0D0D] text-[#666666] uppercase text-[10px]">
               <tr>
@@ -289,6 +291,7 @@ function OrgUsageView({ data, loading, days }: { data: OrgUsageResponse | undefi
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

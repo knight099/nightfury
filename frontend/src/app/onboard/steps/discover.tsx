@@ -1,8 +1,6 @@
-// TODO(onboarding-22a/b): backend endpoints POST /api/agents/{id}/discover and POST /api/agents/{id}/cameras
-// are not yet implemented. UI built ahead of backend; calls will currently 404.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { BRANDS } from "../lib/brands";
 
@@ -16,6 +14,9 @@ interface DiscoverResponse {
   devices: Discovered[];
 }
 
+const POLL_INTERVAL_MS = 5000;
+const MAX_POLLS = 14; // ~70s — covers one full agent discovery cycle
+
 export function DiscoverStep({
   agentId,
   onNext,
@@ -25,21 +26,62 @@ export function DiscoverStep({
 }) {
   const [found, setFound] = useState<Discovered[] | null>(null);
   const [manual, setManual] = useState(false);
+  const polls = useRef(0);
 
   useEffect(() => {
-    api
-      .request<DiscoverResponse>(`/api/agents/${agentId}/discover`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      })
-      .then((r) => setFound(r.devices))
-      .catch(() => setManual(true));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const r = await api.request<DiscoverResponse>(
+          `/api/agents/${agentId}/discover`,
+          { method: "POST", body: JSON.stringify({}) }
+        );
+        if (cancelled) return;
+        if (r.devices.length > 0) {
+          setFound(r.devices);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        setManual(true);
+        return;
+      }
+      polls.current += 1;
+      if (polls.current >= MAX_POLLS) {
+        setFound([]);
+        return;
+      }
+      timer = setTimeout(poll, POLL_INTERVAL_MS);
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [agentId]);
 
   if (manual || (found && found.length === 0)) {
     return <ManualEntry agentId={agentId} onNext={onNext} />;
   }
-  if (!found) return <p className="text-[#A3A3A3]">Scanning your network for NVRs…</p>;
+  if (!found)
+    return (
+      <div className="space-y-3">
+        <p className="text-[#A3A3A3]">Scanning your network for cameras…</p>
+        <p className="text-xs text-[#666666]">
+          This can take up to a minute. Make sure the Nightwatch box is powered
+          on and connected to the same Wi-Fi or router as your cameras.
+        </p>
+        <button
+          onClick={() => setManual(true)}
+          className="text-sm underline text-[#A3A3A3] hover:text-[#F5F5F5]"
+        >
+          Skip — enter camera details manually
+        </button>
+      </div>
+    );
 
   return (
     <div className="space-y-4">
@@ -77,22 +119,27 @@ function CameraEnable({
   const [name, setN] = useState(discovered.name);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const onEnable = async () => {
     setSaving(true);
     setErr(null);
     try {
-      await api.request(`/api/agents/${agentId}/cameras`, {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          onvif_xaddr: discovered.xaddr,
-          user,
-          pass,
-        }),
-      });
+      const res = await api.request<{ camera_id: string; status: string }>(
+        `/api/agents/${agentId}/cameras`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            onvif_xaddr: discovered.xaddr,
+            user,
+            pass,
+          }),
+        }
+      );
       setSaved(true);
+      setPending(res.status === "pending");
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "failed");
     } finally {
@@ -128,6 +175,12 @@ function CameraEnable({
       >
         {saved ? "Enabled" : saving ? "Enabling…" : "Enable"}
       </button>
+      {pending && (
+        <p className="text-xs text-[#A3A3A3]">
+          Finding the camera&apos;s stream URL — the agent is resolving this
+          automatically, it&apos;ll be ready in a few seconds.
+        </p>
+      )}
       {err && <p className="text-sm text-[#EF4444]">{err}</p>}
     </div>
   );

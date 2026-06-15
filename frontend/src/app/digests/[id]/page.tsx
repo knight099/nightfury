@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export default function DigestDetailPage() {
   const params = useParams<{ id: string }>();
@@ -12,7 +13,7 @@ export default function DigestDetailPage() {
     enabled: !!params.id,
   });
 
-  if (isLoading) return <p className="text-[#A3A3A3]">Loading…</p>;
+  if (isLoading) return <div className="space-y-3"><Skeleton className="h-8 w-1/3 rounded-md" /><Skeleton className="h-48 rounded-lg" /></div>;
   if (error)
     return <p className="text-[#EF4444]">{(error as Error).message}</p>;
   if (!data) return null;

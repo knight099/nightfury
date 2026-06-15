@@ -73,6 +73,33 @@ def sign_gcs_url(uri: Optional[str], expires_in: int | None = None) -> Optional[
         return uri
 
 
+def fetch_gcs_object(uri: str) -> Optional[tuple[bytes, str]]:
+    """Download object bytes + content type for a `gs://` URI.
+
+    Used as a fallback for `/latest-frame` when V4 signing is unavailable
+    (e.g. local dev with ADC user credentials, which lack a private key).
+    Fail-soft: returns None on any error.
+    """
+    if not uri or not uri.startswith("gs://"):
+        return None
+
+    try:
+        path = uri[len("gs://"):]
+        bucket_name, _, object_name = path.partition("/")
+        if not bucket_name or not object_name:
+            return None
+
+        client = _get_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.get_blob(object_name)
+        if blob is None:
+            return None
+        return blob.download_as_bytes(), blob.content_type or "application/octet-stream"
+    except Exception as exc:  # noqa: BLE001 — fail-soft by design
+        logger.warning("fetch_gcs_object: failed for %r (%s)", uri, exc)
+        return None
+
+
 def gcs_blob_updated_at(uri: str) -> Optional[datetime]:
     """Return the `updated` timestamp of the blob at the given gs:// URI.
 

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, Copy, Link2, Loader2, Router } from "lucide-react";
 import { api } from "@/lib/api";
-import type { AgentSummary, PairCodeResponse } from "@/types";
+import type { AgentSummary, DiscoveredDevice, PairCodeResponse } from "@/types";
 
 type Step = "choice" | "pair" | "wait" | "register" | "done";
 
@@ -280,10 +280,11 @@ function WaitStep({
   useEffect(() => {
     if (!data || !pairStartedAt) return;
     const startMs = new Date(pairStartedAt).getTime();
-    const matches = data.agents.filter(
-      (a: AgentSummary) =>
-        a.status === "online" && new Date(a.created_at).getTime() >= startMs
-    );
+    const matches = data.agents.filter((a: AgentSummary) => {
+      if (a.status !== "online") return false;
+      const seenAt = a.last_seen_at ?? a.created_at;
+      return new Date(seenAt).getTime() >= startMs;
+    });
     if (matches.length === 0) return;
     matches.sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -315,6 +316,88 @@ function WaitStep({
   );
 }
 
+function DiscoveredCameraCard({
+  agentId,
+  device,
+  siteId,
+  onDone,
+}: {
+  agentId: string;
+  device: DiscoveredDevice;
+  siteId: string;
+  onDone: (cameraId: string) => void;
+}) {
+  const [name, setName] = useState(device.name !== "unknown" ? device.name : "Camera");
+  const [user, setUser] = useState("");
+  const [pass, setPass] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.registerAgentCameraFromOnvif(agentId, {
+        name,
+        site_id: siteId || undefined,
+        onvif_xaddr: device.xaddr,
+        user: user || undefined,
+        pass: pass || undefined,
+      }),
+    onSuccess: (data) => {
+      if (data.status === "pending") {
+        setPending(true);
+        return;
+      }
+      onDone(data.camera_id);
+    },
+    onError: (e: Error) => setErrorMsg(e.message || "Could not register camera."),
+  });
+
+  if (pending) {
+    return (
+      <div className="border border-[#2A2A2A] bg-[#1A1A1A] rounded-md p-3 text-xs text-[#A3A3A3]">
+        Finding {name}&apos;s stream URL — the agent is resolving this
+        automatically on your network. You can continue; it&apos;ll be ready
+        in a few seconds.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-[#2A2A2A] bg-[#1A1A1A] rounded-md p-3 space-y-2">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Camera name"
+        className="w-full px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none"
+      />
+      <div className="text-xs text-[#666666] font-mono break-all">{device.xaddr}</div>
+      <div className="flex gap-2">
+        <input
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
+          placeholder="NVR username"
+          className="flex-1 px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none"
+        />
+        <input
+          type="password"
+          value={pass}
+          onChange={(e) => setPass(e.target.value)}
+          placeholder="NVR password"
+          className="flex-1 px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none"
+        />
+      </div>
+      {errorMsg && <div className="text-xs text-red-400">{errorMsg}</div>}
+      <button
+        onClick={() => mutation.mutate()}
+        disabled={!name || mutation.isPending}
+        className="px-3 py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] transition-colors disabled:opacity-50"
+      >
+        {mutation.isPending ? "Enabling..." : "Enable"}
+      </button>
+    </div>
+  );
+}
+
 function RegisterStep({
   agentId,
   onDone,
@@ -327,10 +410,17 @@ function RegisterStep({
     queryFn: () => api.getSites(),
   });
 
+  const { data: discovered, isLoading: discovering } = useQuery({
+    queryKey: ["agent-discover", agentId],
+    queryFn: () => api.discoverAgentCameras(agentId),
+    refetchInterval: 5000,
+  });
+
   const [name, setName] = useState("");
   const [siteId, setSiteId] = useState<string>("");
   const [rtspUrl, setRtspUrl] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showManual, setShowManual] = useState(false);
 
   useEffect(() => {
     if (!siteId && sites && sites.length > 0) {
@@ -345,7 +435,8 @@ function RegisterStep({
     onError: (e: Error) => setErrorMsg(e.message || "Could not register camera."),
   });
 
-  const disabled = !name || !siteId || !rtspUrl || mutation.isPending;
+  const disabled = !name || !rtspUrl || mutation.isPending;
+  const hasDiscovered = discovered && discovered.devices.length > 0;
 
   return (
     <Card>
@@ -357,6 +448,44 @@ function RegisterStep({
         Tell the agent which camera to pull from over your local network.
       </p>
 
+      {discovering && !discovered && (
+        <div className="flex items-center gap-2 text-sm text-[#A3A3A3] py-2">
+          <Loader2 size={14} className="animate-spin" />
+          Scanning your network for cameras…
+        </div>
+      )}
+
+      {hasDiscovered && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Cameras found on your network</h3>
+          {discovered!.devices.map((d) => (
+            <DiscoveredCameraCard
+              key={d.uuid}
+              agentId={agentId}
+              device={d}
+              siteId={siteId}
+              onDone={onDone}
+            />
+          ))}
+        </div>
+      )}
+
+      {!hasDiscovered && !discovering && (
+        <p className="text-sm text-[#A3A3A3]">
+          No cameras found automatically — enter the RTSP URL manually below.
+        </p>
+      )}
+
+      {hasDiscovered && !showManual && (
+        <button
+          onClick={() => setShowManual(true)}
+          className="text-sm underline text-[#A3A3A3] hover:text-[#F5F5F5]"
+        >
+          I don&apos;t see my camera — enter manually
+        </button>
+      )}
+
+      {(showManual || !hasDiscovered) && (
       <div className="space-y-3">
         <div className="space-y-1">
           <label className="text-xs text-[#A3A3A3]">Camera name</label>
@@ -441,6 +570,7 @@ function RegisterStep({
           </button>
         </div>
       </div>
+      )}
     </Card>
   );
 }

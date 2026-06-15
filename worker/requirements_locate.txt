@@ -1,0 +1,28 @@
+# nightwatch_locate.py — detection / grounding dependencies
+# Install with:  pip install -r requirements_locate.txt
+#
+# NOTE: torch must be installed FIRST with the correct CUDA variant:
+#   pip install torch==2.3.2 torchvision==0.18.2 --index-url https://download.pytorch.org/whl/cu121
+# then run this file.  Mixing PyPI torch with CUDA-specific torch causes silent CPU fallback.
+
+# ── Core runtime ──────────────────────────────────────────────────────────────
+Pillow>=10.3.0,<11.0.0          # image I/O shared with worker pipeline
+numpy>=1.26.0,<2.0.0
+
+# ── LocateAnything-3B (RESEARCH / NON-COMMERCIAL ONLY) ───────────────────────
+# nvidia/LocateAnything-3B — Qwen2.5-3B backbone, NVIDIA + Qwen Research License.
+# Pinned to versions from the model card as of 2025-06; update only after testing.
+transformers==4.51.3             # Qwen2.5-VL support landed in 4.49; 4.51.x is stable
+qwen-vl-utils==0.0.10            # required by the model's processor (py_apply_chat_template)
+accelerate==0.34.2               # device_map / bf16 loading
+einops>=0.7.0                    # used internally by the vision tower
+
+# ── OWLv2 (Apache-2.0 — production backend) ──────────────────────────────────
+# google/owlv2-base-patch16-ensemble  (or -large variant)
+# transformers already above covers Owlv2Processor / Owlv2ForObjectDetection.
+# No extra packages needed beyond torch + transformers.
+
+# ── Optional: Grounding DINO (Apache-2.0 — alternative production backend) ───
+# Uncomment if you use GroundingDINOBackend instead of OWLv2Backend.
+# groundingdino-py==0.4.0        # IDEA-Research fork with pip support
+# supervision==0.22.0            # box / annotation helpers used by DINO examples

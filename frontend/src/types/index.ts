@@ -201,6 +201,16 @@ export interface AgentSummary {
   created_at: string;
 }
 
+export interface DiscoveredDevice {
+  uuid: string;
+  name: string;
+  xaddr: string;
+}
+
+export interface DiscoverResponse {
+  devices: DiscoveredDevice[];
+}
+
 export interface PairCodeResponse {
   code: string;
   expires_at: string;

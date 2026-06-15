@@ -1,3 +1,4 @@
+import base64
 import secrets
 import uuid
 
@@ -18,7 +19,7 @@ from app.schemas.camera import (
     LatestFrameResponse,
     UpdateCameraRequest,
 )
-from app.services.gcs import gcs_blob_updated_at, sign_gcs_url
+from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -164,4 +165,13 @@ async def get_camera_latest_frame(
         raise HTTPException(status_code=404, detail="no recent frame")
 
     signed_url = sign_gcs_url(uri, expires_in=300)
+    if signed_url.startswith("gs://"):
+        # V4 signing unavailable (e.g. local dev with ADC user credentials,
+        # which have no private key to sign with) — inline the bytes instead.
+        obj = fetch_gcs_object(uri)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="no recent frame")
+        data, content_type = obj
+        signed_url = f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+
     return LatestFrameResponse(url=signed_url, updated_at=updated_at)

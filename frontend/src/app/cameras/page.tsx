@@ -68,22 +68,22 @@ export default function CamerasPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-3">
           <h1 className="text-xl font-bold">Cameras</h1>
           <span className="text-xs text-[#666666]">{cameraCount} total</span>
         </div>
         {canManage && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Link
               href="/cameras/connect"
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md text-sm hover:text-[#F5F5F5] transition-colors"
+              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-3 py-2.5 sm:py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md text-sm hover:text-[#F5F5F5] transition-colors"
             >
               <Link2 size={16} /> Connect Camera
             </Link>
             <button
               onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] transition-colors"
+              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-3 py-2.5 sm:py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] glow-accent-hover transition-colors"
             >
               <Plus size={16} /> Add Camera
             </button>
@@ -102,16 +102,21 @@ export default function CamerasPage() {
           ))}
         </div>
       ) : cameraCount === 0 ? (
-        <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-8 text-center space-y-3">
-          <div className="text-sm text-[#F5F5F5]">No cameras yet</div>
-          <div className="text-xs text-[#A3A3A3]">Connect your first camera to start receiving AI-powered events.</div>
+        <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-10 text-center space-y-4">
+          <div className="mx-auto w-14 h-14 rounded-full bg-[#1E90FF]/10 flex items-center justify-center">
+            <Plus size={26} className="text-[#1E90FF]" />
+          </div>
+          <div className="text-base font-medium text-[#F5F5F5]">Add your first camera</div>
+          <div className="text-sm text-[#A3A3A3] max-w-sm mx-auto">
+            Once connected, Nightwatch watches it 24/7 and tells you the moment something happens.
+          </div>
           {canManage && (
-            <button
-              onClick={() => setShowAdd(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] transition-colors"
+            <Link
+              href="/cameras/connect"
+              className="inline-flex items-center gap-2 px-5 py-3 bg-[#1E90FF] text-white rounded-md text-sm font-medium hover:bg-[#3BA0FF] glow-accent transition-colors"
             >
-              <Plus size={16} /> Add Camera
-            </button>
+              <Link2 size={16} /> Connect a camera
+            </Link>
           )}
         </div>
       ) : (
@@ -222,19 +227,24 @@ function AddCameraForm({ sites, onClose }: { sites: Site[]; onClose: () => void 
   }
 
   return (
-    <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-4 space-y-3">
-      <h3 className="text-sm font-medium">Add Camera</h3>
-      <div className="grid grid-cols-2 gap-3">
+    <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-sm font-medium">Add Camera (advanced)</h3>
+        <Link href="/cameras/connect" className="text-xs text-[#1E90FF] hover:text-[#3BA0FF] transition-colors shrink-0">
+          Not technical? Use the guided setup →
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <input
-          placeholder="Camera name"
+          placeholder="Camera name (e.g. Front Gate)"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm"
+          className="px-3 py-2.5 sm:py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm focus:outline-none focus:border-[#1E90FF]"
         />
         <select
           value={siteId}
           onChange={(e) => setSiteId(e.target.value)}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm"
+          className="px-3 py-2.5 sm:py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm focus:outline-none focus:border-[#1E90FF]"
         >
           {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           {sites.length === 0 && <option value="">No sites — create one first</option>}
@@ -242,19 +252,10 @@ function AddCameraForm({ sites, onClose }: { sites: Site[]; onClose: () => void 
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value)}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm"
+          className="px-3 py-2.5 sm:py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm focus:outline-none focus:border-[#1E90FF]"
         >
           <option value="rtsp_pull">RTSP Pull (I provide URL)</option>
           <option value="rtmp_push">RTMP Push (give me endpoint)</option>
-        </select>
-        <select
-          value={sensitivity}
-          onChange={(e) => setSensitivity(e.target.value)}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm"
-        >
-          <option value="low">Low sensitivity</option>
-          <option value="medium">Medium sensitivity</option>
-          <option value="high">High sensitivity</option>
         </select>
       </div>
       {mode === "rtsp_pull" && (
@@ -262,33 +263,63 @@ function AddCameraForm({ sites, onClose }: { sites: Site[]; onClose: () => void 
           placeholder="rtsp://user:pass@ip:554/stream"
           value={rtspUrl}
           onChange={(e) => setRtspUrl(e.target.value)}
-          className="w-full px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm"
+          className="w-full px-3 py-2.5 sm:py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded text-sm font-mono focus:outline-none focus:border-[#1E90FF]"
         />
       )}
-      <div className="flex flex-wrap gap-2">
-        {eventOptions.map((ev) => (
-          <label key={ev} className="flex items-center gap-1 text-xs">
-            <input
-              type="checkbox"
-              checked={events.includes(ev)}
-              onChange={(e) =>
-                setEvents(e.target.checked ? [...events, ev] : events.filter((x) => x !== ev))
+      <div>
+        <span className="text-[11px] text-[#A3A3A3]">How alert should this camera be?</span>
+        <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {[
+            { value: "low", title: "Fewer alerts", desc: "Only clear, obvious activity" },
+            { value: "medium", title: "Balanced", desc: "Good for most homes & shops" },
+            { value: "high", title: "Catch everything", desc: "More alerts, some may be minor" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSensitivity(opt.value)}
+              className={`text-left p-3 rounded-lg border transition-colors ${
+                sensitivity === opt.value
+                  ? "border-[#1E90FF] bg-[#1E90FF]/10"
+                  : "border-[#2A2A2A] bg-[#1A1A1A] hover:border-[#3A3A3A]"
+              }`}
+            >
+              <div className="text-xs font-medium text-[#F5F5F5]">{opt.title}</div>
+              <div className="mt-0.5 text-[11px] text-[#A3A3A3]">{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <span className="text-[11px] text-[#A3A3A3]">What should this camera watch for?</span>
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          {eventOptions.map((ev) => (
+            <button
+              key={ev}
+              type="button"
+              onClick={() =>
+                setEvents(events.includes(ev) ? events.filter((x) => x !== ev) : [...events, ev])
               }
-              className="rounded border-[#2A2A2A]"
-            />
-            {ev.replace("_", " ")}
-          </label>
-        ))}
+              className={`px-3 py-2 rounded-full text-xs capitalize border transition-colors ${
+                events.includes(ev)
+                  ? "border-[#1E90FF] bg-[#1E90FF]/10 text-[#1E90FF]"
+                  : "border-[#2A2A2A] bg-[#1A1A1A] text-[#A3A3A3] hover:text-[#F5F5F5]"
+              }`}
+            >
+              {ev.replace(/_/g, " ")}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2">
         <button
           onClick={() => createMutation.mutate()}
           disabled={!name || !siteId}
-          className="px-3 py-1.5 bg-[#1E90FF] text-white rounded text-sm disabled:opacity-50"
+          className="px-5 py-2.5 bg-[#1E90FF] text-white rounded-md text-sm font-medium hover:bg-[#3BA0FF] glow-accent-hover disabled:opacity-50 transition-colors"
         >
-          Create
+          Create camera
         </button>
-        <button onClick={onClose} className="px-3 py-1.5 text-[#666666] text-sm">Cancel</button>
+        <button onClick={onClose} className="px-4 py-2.5 text-[#A3A3A3] hover:text-[#F5F5F5] text-sm transition-colors">Cancel</button>
       </div>
     </div>
   );

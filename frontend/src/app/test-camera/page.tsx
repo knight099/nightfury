@@ -807,11 +807,11 @@ function SceneContextModal({ context, onSave, onClose }: {
         </div>
         <div className="space-y-3 mb-4">
           {fieldRow("center", "Center", "e.g., loading dock with conveyor belt")}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {fieldRow("left", "Left side", "e.g., storage racks with boxes")}
             {fieldRow("right", "Right side", "e.g., parking area for forklifts")}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {fieldRow("top", "Top / Far", "e.g., warehouse ceiling with lights")}
             {fieldRow("bottom", "Bottom / Near", "e.g., concrete floor with floor markings")}
           </div>

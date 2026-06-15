@@ -17,7 +17,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Help widget: floating chat (bottom-right), 6 troubleshooting topics, keyword matching, dark themed
 - Full TypeScript types matching backend, typed API client, Zustand auth store
 - Build passes with zero errors (`npm run build` verified)
-- NOT yet done: event detail page, zone editor, WebSocket live feed, admin page, settings, mobile responsive, loading skeletons
+- Mobile responsive: AppShell with bottom tab bar; pages adapt at sm/lg breakpoints
 
 ## What This Service Does
 Web dashboard for managing cameras, viewing events, configuring alerts, and providing feedback on AI detections. Dark-themed, real-time via WebSocket.
@@ -31,8 +31,8 @@ Web dashboard for managing cameras, viewing events, configuring alerts, and prov
 - Dark mode ONLY (no light mode toggle)
 - Username-based login (not email)
 - Token is opaque (can't decode client-side — don't try to extract user info from it)
-- Font: Comic Relief from Google Fonts
-- Sidebar navigation (fixed left, 224px wide)
+- Fonts: Inter body / Space Grotesk headings / JetBrains Mono data (next/font)
+- Navigation: fixed left sidebar (224px) on lg+ screens; bottom tab bar + top app bar + "More" sheet on mobile (<1024px) — all in components/layout/app-shell.tsx
 - Help widget always visible (bottom-right floating button)
 - Tour auto-triggers on first login only (localStorage flag)
 
@@ -55,7 +55,7 @@ Severity critical: #EF4444
 ```
 
 ## How to Add a New Page
-1. Create `src/app/<route>/layout.tsx` — copy from events/layout.tsx (includes Sidebar + HelpWidget + auth guard)
+1. Create `src/app/<route>/layout.tsx` — render `<AppShell>{children}</AppShell>` (handles auth guard, responsive nav, HelpWidget, ChatSidePanel; pass `requireRole="super_admin"` for admin routes)
 2. Create `src/app/<route>/page.tsx` — "use client", fetch with TanStack Query
 3. Add nav item in `components/layout/sidebar.tsx` (with `data-tour` attribute)
 4. Add tour step in `lib/tour.ts` if relevant

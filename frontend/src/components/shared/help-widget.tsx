@@ -259,7 +259,7 @@ export function HelpWidget() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-300",
+          "fixed bottom-20 lg:bottom-6 right-4 lg:right-6 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-300",
           isOpen
             ? "bg-[#2A2A2A] rotate-0"
             : "bg-[#1E90FF] hover:bg-[#3BA0FF] hover:scale-110"
@@ -270,7 +270,7 @@ export function HelpWidget() {
 
       {/* Chat panel */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-96 h-[560px] bg-[#111111] border border-[#2A2A2A] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed inset-x-3 bottom-[148px] top-20 lg:inset-auto lg:bottom-24 lg:right-6 lg:top-auto z-50 w-auto lg:w-96 h-auto lg:h-[560px] bg-[#111111] border border-[#2A2A2A] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
           {/* Header */}
           <div className="px-4 py-3 border-b border-[#2A2A2A] bg-[#0D0D0D]">
             <div className="flex items-center gap-2">

@@ -205,7 +205,7 @@ export function ChatSidePanel() {
       <button
         onClick={toggle}
         aria-label="Open chat panel"
-        className="fixed right-0 top-1/2 -translate-y-1/2 z-40 w-8 h-24 bg-[#111111] border border-r-0 border-[#2A2A2A] rounded-l-md flex flex-col items-center justify-center gap-1 hover:bg-[#1A1A1A] transition-colors"
+        className="hidden lg:flex fixed right-0 top-1/2 -translate-y-1/2 z-40 w-8 h-24 bg-[#111111] border border-r-0 border-[#2A2A2A] rounded-l-md flex-col items-center justify-center gap-1 hover:bg-[#1A1A1A] transition-colors"
       >
         <ChevronLeft size={16} className="text-[#A3A3A3]" />
         {unread > 0 && (
@@ -218,7 +218,7 @@ export function ChatSidePanel() {
   }
 
   return (
-    <aside className="fixed right-0 top-0 h-screen w-[360px] bg-[#111111] border-l border-[#2A2A2A] z-40 flex flex-col">
+    <aside className="fixed inset-0 lg:inset-auto lg:right-0 lg:top-0 h-dvh lg:h-screen w-full lg:w-[360px] bg-[#111111] lg:border-l border-[#2A2A2A] z-50 lg:z-40 flex flex-col pb-safe">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#2A2A2A]">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-[#F5F5F5]">

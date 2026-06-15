@@ -168,7 +168,11 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
             {frame?.url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={`${frame.url}${frame.url.includes("?") ? "&" : "?"}t=${encodeURIComponent(frame.updated_at)}`}
+                src={
+                  frame.url.startsWith("data:")
+                    ? frame.url
+                    : `${frame.url}${frame.url.includes("?") ? "&" : "?"}t=${encodeURIComponent(frame.updated_at)}`
+                }
                 alt={camera.name}
                 className="absolute inset-0 w-full h-full object-contain bg-black"
                 draggable={false}

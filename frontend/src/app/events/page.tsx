@@ -72,11 +72,11 @@ export default function EventsPage() {
       <h1 className="text-xl font-bold">Events</h1>
 
       {/* Filters */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-2 sm:gap-3">
         <select
           value={eventType}
           onChange={(e) => { setEventType(e.target.value); setPage(1); }}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5]"
+          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5]"
         >
           <option value="">All types</option>
           <option value="person">Person</option>
@@ -88,7 +88,7 @@ export default function EventsPage() {
         <select
           value={severity}
           onChange={(e) => { setSeverity(e.target.value); setPage(1); }}
-          className="px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5]"
+          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5]"
         >
           <option value="">All severity</option>
           <option value="critical">Critical</option>
@@ -108,23 +108,28 @@ export default function EventsPage() {
           </div>
         )}
         {!isLoading && events.length === 0 && (
-          <div className="p-8 text-center text-sm text-[#666666]">No events found</div>
+          <div className="p-10 text-center">
+            <p className="text-sm text-[#A3A3A3]">Nothing here yet.</p>
+            <p className="mt-1 text-xs text-[#666666]">
+              When a camera spots something, it shows up here with a snapshot and description.
+            </p>
+          </div>
         )}
         <div className="divide-y divide-[#2A2A2A]">
           {events.map((event: Event) => (
             <Link
               key={event.id}
               href={`/events/${event.id}`}
-              className="px-4 py-3 flex items-center gap-3 hover:bg-[#1A1A1A] transition-colors"
+              className="px-4 py-3 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 hover:bg-[#1A1A1A] transition-colors"
             >
-              <div className="w-20 text-xs text-[#666666] font-mono">
+              <div className="w-20 text-xs text-[#666666] font-mono shrink-0">
                 {new Date(event.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
               </div>
-              <div className="w-28 text-sm truncate">{event.event_type.replace("_", " ")}</div>
+              <div className="w-28 text-sm capitalize truncate shrink-0">{event.event_type.replace("_", " ")}</div>
               <SeverityBadge severity={event.severity} />
-              <div className="w-12 text-xs text-[#666666]">{(event.confidence * 100).toFixed(0)}%</div>
-              <div className="flex-1 text-xs text-[#A3A3A3] truncate">{event.description}</div>
-              <div className="flex items-center gap-1">
+              <div className="hidden md:block w-12 text-xs text-[#666666]">{(event.confidence * 100).toFixed(0)}%</div>
+              <div className="basis-full sm:basis-auto sm:flex-1 text-xs text-[#A3A3A3] truncate order-last sm:order-none">{event.description}</div>
+              <div className="flex items-center gap-1 ml-auto sm:ml-0">
                 {event.feedback ? (
                   <span className="text-xs text-[#666666] px-2 py-0.5 bg-[#1A1A1A] rounded">
                     {event.feedback}
@@ -137,10 +142,10 @@ export default function EventsPage() {
                         e.stopPropagation();
                         feedbackMutation.mutate({ id: event.id, feedback: "approved" });
                       }}
-                      className="p-1 rounded hover:bg-green-500/10 text-green-400"
+                      className="p-2.5 sm:p-1 rounded hover:bg-green-500/10 text-green-400"
                       title="Approve"
                     >
-                      <Check size={14} />
+                      <Check size={16} />
                     </button>
                     <button
                       onClick={(e) => {
@@ -148,10 +153,10 @@ export default function EventsPage() {
                         e.stopPropagation();
                         feedbackMutation.mutate({ id: event.id, feedback: "rejected" });
                       }}
-                      className="p-1 rounded hover:bg-red-500/10 text-red-400"
+                      className="p-2.5 sm:p-1 rounded hover:bg-red-500/10 text-red-400"
                       title="Reject"
                     >
-                      <X size={14} />
+                      <X size={16} />
                     </button>
                   </>
                 ) : (
@@ -172,16 +177,18 @@ export default function EventsPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="p-1 rounded bg-[#1A1A1A] disabled:opacity-30"
+            className="p-2.5 sm:p-1.5 rounded bg-[#1A1A1A] disabled:opacity-30 transition-colors hover:bg-[#222222]"
+            aria-label="Previous page"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={18} />
           </button>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="p-1 rounded bg-[#1A1A1A] disabled:opacity-30"
+            className="p-2.5 sm:p-1.5 rounded bg-[#1A1A1A] disabled:opacity-30 transition-colors hover:bg-[#222222]"
+            aria-label="Next page"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={18} />
           </button>
         </div>
       </div>

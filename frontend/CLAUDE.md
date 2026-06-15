@@ -47,7 +47,7 @@
 - Border: `#2A2A2A`
 - Input bg: `#1F1F1F`
 - Severity: green `#4ADE80`, amber `#FBBF24`, orange `#F97316`, red `#EF4444`
-- Font: "Comic Relief" (Google Fonts), monospace: system default
+- Fonts: Inter (body), Space Grotesk (headings, via `font-heading`), JetBrains Mono (timestamps/data) — all via next/font
 
 ### Component Rules
 - Use shadcn/ui as base — override with Nightwatch colors via CSS variables

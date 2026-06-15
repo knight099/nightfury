@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { User } from "@/types";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface Org {
   id: string;
@@ -116,7 +117,7 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
       </div>
 
       {loading ? (
-        <p className="text-[#666666]">Loading...</p>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-md" />)}</div>
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
@@ -129,7 +130,7 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
                   }}
                   className="space-y-2"
                 >
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="text"
                       value={editForm.username}
@@ -329,7 +330,7 @@ function SessionsPanel({ userId }: { userId: string }) {
         </button>
       </div>
       {isLoading ? (
-        <p className="text-xs text-[#666666]">Loading sessions...</p>
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 rounded-md" />)}</div>
       ) : isError ? (
         <p className="text-xs text-[#EF4444]">
           {error instanceof Error ? error.message : "Failed to load sessions"}

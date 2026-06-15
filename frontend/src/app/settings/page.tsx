@@ -212,7 +212,7 @@ function InviteForm({ onClose, onInvite, loading }: { onClose: () => void; onInv
     <div className="p-3 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg">
       <form
         onSubmit={(e) => { e.preventDefault(); onInvite({ username, password, name, role }); }}
-        className="grid grid-cols-2 gap-2"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2"
       >
         <input
           placeholder="Username"

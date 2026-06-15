@@ -5,6 +5,17 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PairCodeRequest(BaseModel):
+    """Body for minting a pair code.
+
+    ``org_id`` is only used for super_admin (who has no org of their own) to
+    pick which org the paired agent will belong to. Ignored for normal users
+    — they always mint codes for their own org.
+    """
+
+    org_id: uuid.UUID | None = None
+
+
 class PairCodeResponse(BaseModel):
     code: str
     expires_at: datetime
@@ -54,23 +65,71 @@ class AgentDetailResponse(BaseModel):
     cameras_streaming: int = 0
 
 
-class DiscoveredCamera(BaseModel):
-    name: str | None = None
-    rtsp_url: str
-    brand: str | None = None
-    model: str | None = None
+class DiscoveredDevice(BaseModel):
+    """An ONVIF device found by the agent's WS-Discovery probe."""
+
+    uuid: str = Field(..., max_length=256)
+    name: str = "unknown"
+    xaddr: str = Field(..., max_length=512)
+
+
+class DiscoverPushRequest(BaseModel):
+    """Body of the agent-authenticated push of discovery results."""
+
+    devices: list[DiscoveredDevice] = Field(default_factory=list, max_length=64)
 
 
 class DiscoverResponse(BaseModel):
-    cameras: list[DiscoveredCamera]
+    devices: list[DiscoveredDevice]
 
 
 class RegisterCameraRequest(BaseModel):
+    """Register a camera behind an agent.
+
+    Two forms, matching the onboarding wizard:
+    - manual entry sends a ready ``rtsp_url``
+    - discovered-device flow sends ``onvif_xaddr`` + NVR credentials and the
+      backend derives a default RTSP URL from the device host
+    ``site_id`` is optional; when omitted the org's first site is used
+    (created as "Home" if the org has none).
+    """
+
     name: str
-    site_id: uuid.UUID
-    rtsp_url: str
+    site_id: uuid.UUID | None = None
+    rtsp_url: str | None = None
+    onvif_xaddr: str | None = None
+    user: str | None = None
+    password: str | None = Field(default=None, alias="pass")
     brand: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RegisterCameraResponse(BaseModel):
     camera_id: uuid.UUID
+    status: str
+
+
+class ResolveJob(BaseModel):
+    """An ONVIF GetStreamUri job for the agent to run on the LAN.
+
+    The backend can't reach the camera directly, so it hands the agent the
+    device's ONVIF xaddr + NVR credentials and waits for the resolved RTSP
+    URL.
+    """
+
+    camera_id: uuid.UUID
+    xaddr: str
+    user: str | None = None
+    password: str | None = Field(default=None, alias="pass")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ResolveJobsResponse(BaseModel):
+    jobs: list[ResolveJob]
+
+
+class ResolveResultRequest(BaseModel):
+    rtsp_url: str | None = None
+    error: str | None = None

@@ -43,13 +43,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0D0D0D]">
-      <div className="w-full max-w-sm p-8 bg-[#111111] rounded-lg border border-[#2A2A2A]">
-        <h1 className="text-2xl font-bold text-center mb-2">
+    <div className="min-h-dvh flex items-center justify-center bg-[#0D0D0D] px-4 relative overflow-hidden">
+      <div
+        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full opacity-20 blur-3xl"
+        style={{ background: "radial-gradient(circle, #1E90FF 0%, transparent 70%)" }}
+      />
+      <div className="w-full max-w-sm p-6 sm:p-8 bg-[#111111] rounded-xl border border-[#2A2A2A] shadow-2xl relative">
+        <h1 className="text-3xl font-bold text-center mb-2 font-heading tracking-tight">
           <span className="text-[#1E90FF]">N</span>IGHTWATCH
         </h1>
-        <p className="text-sm text-[#666666] text-center mb-8">
-          AI CCTV Intelligence Platform
+        <p className="text-sm text-[#A3A3A3] text-center mb-8">
+          Your cameras, watched by AI — day and night.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -60,7 +64,7 @@ export default function LoginPage() {
                 placeholder="Your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
+                className="w-full px-3.5 py-3 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
                 required
               />
               <input
@@ -68,7 +72,7 @@ export default function LoginPage() {
                 placeholder="Organization name"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
-                className="w-full px-3 py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
+                className="w-full px-3.5 py-3 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
                 required
               />
             </>
@@ -79,7 +83,7 @@ export default function LoginPage() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
-            className="w-full px-3 py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
+            className="w-full px-3.5 py-3 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
             required
           />
           <input
@@ -87,7 +91,7 @@ export default function LoginPage() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
+            className="w-full px-3.5 py-3 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#1E90FF]"
             required
           />
 
@@ -96,9 +100,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 bg-[#1E90FF] text-white rounded-md text-sm font-medium hover:bg-[#3BA0FF] disabled:opacity-50 transition-colors"
+            className="w-full py-3 bg-[#1E90FF] text-white rounded-md text-sm font-semibold hover:bg-[#3BA0FF] disabled:opacity-50 glow-accent-hover transition-colors"
           >
-            {loading ? "..." : isSignup ? "Create Account" : "Sign In"}
+            {loading ? "Signing in…" : isSignup ? "Create Account" : "Sign In"}
           </button>
         </form>
 

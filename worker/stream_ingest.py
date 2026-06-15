@@ -35,7 +35,7 @@ class StreamIngest:
         ]
 
         if self.config.ingest_mode == "rtsp_pull":
-            cmd += ["-rtsp_transport", "tcp", "-stimeout", "5000000"]
+            cmd += ["-rtsp_transport", "tcp", "-timeout", "5000000"]
 
         cmd += [
             "-i", source,
