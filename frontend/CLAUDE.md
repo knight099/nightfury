@@ -104,7 +104,7 @@
 ### Live View & Camera Pages
 - `/cameras` is now a 2x2 / 3x3 grid of camera tiles; click a tile → `/cameras/[id]` single view.
 - Single-camera view shows the live snapshot + a filtered feed of events for that camera.
-- Live view is **snapshot polling, NOT real video**: fetch `GET /api/cameras/{id}/latest-frame` (returns a signed URL) and render in `<img>`, refreshing every 1–2s. Do NOT add HLS, WebRTC, or RTSP players in the MVP.
+- Live view is a **worker-hosted MJPEG stream** (`multipart/x-mixed-replace`): fetch `GET /api/cameras/{id}/stream-url` (org-scoped, returns a signed short-lived `?token=` URL to the worker's `/stream/{camera_id}`), render in `<img>`, refetch the signed URL periodically (~every 10min, ahead of the ~15min token TTL). On `<img onError>`, fall back to snapshot polling: `GET /api/cameras/{id}/latest-frame` (signed URL), refreshing every 1–2s. Do NOT add HLS, WebRTC, or RTSP players.
 - Persistent right-side chat panel mounted in the authenticated layout: tabs **Events** (WebSocket live stream) + **Ask** (Gemini Q&A scoped to camera/event); collapsible; toggle with **Ctrl/Cmd+K**.
 
 ### Help & Onboarding

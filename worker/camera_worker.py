@@ -175,6 +175,10 @@ class CameraWorker:
         await self.api.send_heartbeat(self.camera_config.camera_id, status, metrics)
 
     @property
+    def last_frame(self) -> np.ndarray | None:
+        return self._last_frame
+
+    @property
     def is_alive(self) -> bool:
         return self._running and self._task is not None and not self._task.done()
 

@@ -97,7 +97,7 @@ export default function EventDetailPage() {
     );
   }
 
-  const event = data?.event;
+  const event = data;
   if (!event) return null;
 
   const ts = new Date(event.timestamp);

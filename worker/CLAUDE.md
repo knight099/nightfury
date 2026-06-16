@@ -89,6 +89,13 @@
 - POST event to backend `/internal/events` endpoint
 - On backend unreachable: log locally, retry on next heartbeat cycle
 
+### Live MJPEG stream server
+- `MJPEGServer` (mjpeg_server.py) serves `GET /stream/{camera_id}?token=...` on `MJPEG_SERVER_PORT` (default 8090), streaming each camera's latest decoded frame as `multipart/x-mixed-replace` JPEG at `MJPEG_FPS`
+- This is the primary live-view path; the frontend falls back to snapshot polling (`/latest-frame`) if it errors
+- If `STREAM_TOKEN_SECRET` is set, every request must include a valid `?token=` issued by the backend's `GET /api/cameras/{id}/stream-url` (HMAC-SHA256, `{camera_id}:{expires_at}`, shared secret) — invalid/expired/mismatched tokens get 403. `STREAM_TOKEN_SECRET` must match the backend's setting
+- Empty `STREAM_TOKEN_SECRET` disables auth — local dev only, never in production
+- NEVER expose this server outside the LAN/worker network without the token check enabled
+
 ### Live snapshot upload
 - Each camera worker uploads its latest decoded frame as WebP q70 to GCS `latest/{camera_id}.webp` every 2s
 - Skip upload if frame unchanged since last iteration

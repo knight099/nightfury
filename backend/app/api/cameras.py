@@ -17,9 +17,11 @@ from app.schemas.camera import (
     CameraResponse,
     CreateCameraRequest,
     LatestFrameResponse,
+    StreamUrlResponse,
     UpdateCameraRequest,
 )
 from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
+from app.services.stream_token import sign_stream_token
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -175,3 +177,20 @@ async def get_camera_latest_frame(
         signed_url = f"data:{content_type};base64,{base64.b64encode(data).decode()}"
 
     return LatestFrameResponse(url=signed_url, updated_at=updated_at)
+
+
+@router.get("/{camera_id}/stream-url", response_model=StreamUrlResponse)
+async def get_camera_stream_url(
+    camera_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = _camera_query(user).where(Camera.id == camera_id)
+    result = await db.execute(q)
+    camera = result.scalar_one_or_none()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    token, expires_at = sign_stream_token(str(camera_id))
+    url = f"{settings.worker_stream_url}/stream/{camera_id}?token={token}"
+    return StreamUrlResponse(url=url, expires_at=expires_at)

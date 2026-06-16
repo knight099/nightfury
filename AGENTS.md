@@ -57,7 +57,6 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 - Alembic migration files (currently using create_all)
 - Rate limiting middleware (Redis sliding window)
 - GCS signed URLs (currently returning gs:// paths — frontend can't load them)
-- Event detail page (/events/[id]) with snapshot viewer + clip player
 - Production deployment: Terraform, Cloud Run (backend+frontend), GCE (worker)
 
 **P2 — Should do for good MVP:**
@@ -67,12 +66,11 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 - Admin UI page (super_admin: orgs/users management)
 - SQLite offline queue in worker (for when backend is unreachable)
 - Full test suites (backend integration, worker e2e)
-- Live camera view: snapshot polling (current approach) — worker uploads `latest/{camera_id}.webp` every 2s, frontend polls via `GET /api/cameras/{id}/latest-frame`.
+- Live camera view: worker-hosted MJPEG stream via signed stream-token URL (`GET /api/cameras/{id}/stream-url` → `GET /stream/{camera_id}?token=...`), with snapshot polling (`GET /api/cameras/{id}/latest-frame`, worker uploads `latest/{camera_id}.webp` every 2s) as fallback.
 - Per-camera event view at `/cameras/[id]` with snapshot + filtered events.
 - Persistent chat side panel: live event stream + ask-Gemini per camera/event.
 
 **P3 — Nice to have:**
-- Mobile responsive layout
 - Loading skeletons + error boundaries
 - Analytics/charts page
 - Settings/team management page
@@ -137,10 +135,20 @@ Scheduler tick (per org, per slot, in org timezone)
       → query events in window → compact (sample if >200) → Gemini text summary
       → persist digests row → render WhatsApp message + dashboard view
 
-# Live snapshot view (polling)
-Worker → encode latest BGR frame as WebP every 2s → GCS latest/{camera_id}.webp
-Frontend → GET /api/cameras/{id}/latest-frame → signed URL → <img> tag, refresh every 1-2s
-NEVER stream raw video to cloud; only the most recent annotated/decoded frame at low fps.
+# Live view (MJPEG stream, primary; snapshot polling, fallback)
+Worker hosts a local MJPEG server (multipart/x-mixed-replace) on MJPEG_SERVER_PORT (default 8090),
+serving GET /stream/{camera_id}?token=... from each camera's latest decoded frame.
+Backend GET /api/cameras/{id}/stream-url (org-scoped, auth required) returns a signed,
+short-lived stream-token URL (HMAC, STREAM_TOKEN_SECRET shared between backend + worker,
+default TTL 15min). Frontend <img> tag points at this URL, refetching the signed URL
+periodically to stay ahead of expiry.
+Fallback: if the MJPEG <img> errors (worker unreachable / stream not started), frontend
+falls back to snapshot polling — worker encodes latest BGR frame as WebP every 2s →
+GCS latest/{camera_id}.webp; frontend polls GET /api/cameras/{id}/latest-frame → signed
+URL → <img>, refresh every 1-2s.
+NEVER stream raw video to cloud/relay; the MJPEG server runs on the worker (LAN-local or
+worker VM) and is reached directly by the frontend — only event snapshots + 10s clips are
+uploaded to cloud storage.
 ```
 
 ### Naming Conventions
@@ -174,4 +182,4 @@ NEVER stream raw video to cloud; only the most recent annotated/decoded frame at
 - Don't add ORM raw queries — SQLAlchemy models only
 - Don't hardcode IPs, ports, or credentials
 - Don't add features not in MVP_PLAN.md without explicit instruction
-- Don't add HLS or raw RTSP republishing for the live view in the MVP — use snapshot polling. WebRTC live video is a planned future feature, do not implement it without explicit instruction.
+- Don't add HLS, raw RTSP republishing, or WebRTC for the live view — live view uses the worker-hosted MJPEG stream (signed stream-token URL from `/api/cameras/{id}/stream-url`), falling back to snapshot polling. WebRTC live video via the relay remains a planned future feature for the home-agent path; do not implement it without explicit instruction.

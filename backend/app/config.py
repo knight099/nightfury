@@ -43,6 +43,13 @@ class Settings(BaseSettings):
 
     relay_public_url: str = "grpcs://relay.nightwatch.local:443"
 
+    # Live MJPEG stream (worker-hosted). Public base URL of the worker's
+    # stream server, and a shared HMAC secret used to sign short-lived
+    # per-camera stream tokens (verified by the worker without a callback).
+    worker_stream_url: str = "http://localhost:8090"
+    stream_token_secret: str = "change-me-stream-secret"
+    stream_token_ttl_seconds: int = 900
+
     super_admin_username: str = "super_nightvision"
     super_admin_password: str = ""
 

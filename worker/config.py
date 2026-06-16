@@ -46,6 +46,18 @@ class Config(BaseSettings):
     latest_frame_interval_seconds: float = 2.0
     latest_frame_quality: int = 70
 
+    # Live MJPEG stream server (multipart/x-mixed-replace)
+    mjpeg_server_enabled: bool = True
+    mjpeg_server_host: str = "0.0.0.0"
+    mjpeg_server_port: int = 8090
+    mjpeg_fps: float = 10.0
+    mjpeg_quality: int = 80
+
+    # Shared HMAC secret used to verify stream tokens issued by the backend's
+    # /api/cameras/{id}/stream-url endpoint. Must match backend's
+    # STREAM_TOKEN_SECRET. Empty string disables auth (local dev only).
+    stream_token_secret: str = ""
+
     # Offline queue (events buffered when backend unreachable)
     offline_queue_path: str = "/tmp/nightwatch_worker_queue.sqlite3"
     offline_queue_max_rows: int = 10000

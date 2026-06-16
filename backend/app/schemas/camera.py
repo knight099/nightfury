@@ -57,3 +57,8 @@ class CameraCreatedResponse(BaseModel):
 class LatestFrameResponse(BaseModel):
     url: str
     updated_at: datetime
+
+
+class StreamUrlResponse(BaseModel):
+    url: str
+    expires_at: int

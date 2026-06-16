@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -10,16 +12,34 @@ from app.core.dependencies import get_current_user, require_role
 from app.models.event import Event
 from app.models.user import User
 from app.schemas.event import EventResponse, EventStatsResponse, FeedbackRequest
-from app.services.gcs import sign_gcs_url
+from app.services.gcs import fetch_gcs_object, sign_gcs_url
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 
-def _to_response(event: Event) -> EventResponse:
+async def _signed_or_data_uri(uri: str | None) -> str | None:
+    if not uri:
+        return None
+    signed = sign_gcs_url(uri)
+    if not signed.startswith("gs://"):
+        return signed
+    # Signing unavailable (local dev ADC) — download and inline as data URI.
+    # Runs in a thread so it doesn't block the async event loop.
+    obj = await asyncio.to_thread(fetch_gcs_object, uri)
+    if obj is None:
+        return None
+    data, content_type = obj
+    return f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+
+
+async def _to_response(event: Event) -> EventResponse:
     resp = EventResponse.model_validate(event)
-    resp.snapshot_url = sign_gcs_url(event.snapshot_url)
-    if event.clip_url:
-        resp.clip_url = sign_gcs_url(event.clip_url)
+    snapshot, clip = await asyncio.gather(
+        _signed_or_data_uri(event.snapshot_url),
+        _signed_or_data_uri(event.clip_url),
+    )
+    resp.snapshot_url = snapshot or ""
+    resp.clip_url = clip
     return resp
 
 
@@ -89,7 +109,7 @@ async def list_events(
 
     q = q.order_by(Event.timestamp.desc()).offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
-    events = [_to_response(e) for e in result.scalars().all()]
+    events = await asyncio.gather(*[_to_response(e) for e in result.scalars().all()])
 
     return {"events": events, "total": total, "page": page, "pages": (total + per_page - 1) // per_page}
 
@@ -150,7 +170,7 @@ async def get_event(
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    return _to_response(event)
+    return await _to_response(event)
 
 
 @router.post("/{event_id}/feedback", status_code=200)

@@ -49,13 +49,22 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
   }, [id, setCameraContext]);
 
   const [showZones, setShowZones] = useState(false);
+  const [streamFailed, setStreamFailed] = useState(false);
+
+  const { data: streamUrl } = useQuery({
+    queryKey: ["camera-stream-url", id],
+    queryFn: () => api.getCameraStreamUrl(id),
+    refetchInterval: 10 * 60 * 1000,
+    refetchIntervalInBackground: false,
+    enabled: !!camera && !streamFailed,
+  });
 
   const { data: frame } = useQuery({
     queryKey: ["camera-latest-frame", id],
     queryFn: () => api.getCameraLatestFrame(id),
     refetchInterval: 1000,
     refetchIntervalInBackground: false,
-    enabled: !!camera,
+    enabled: !!camera && streamFailed,
   });
 
   const { data: eventsData, isLoading: eventsLoading } = useQuery<PaginatedResponse<Event>>({
@@ -165,7 +174,17 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-3">
           <div className="relative w-full bg-[#111111] border border-[#2A2A2A] rounded-lg overflow-hidden" style={{ aspectRatio: "16 / 9" }}>
-            {frame?.url ? (
+            {!streamFailed && streamUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={streamUrl.url}
+                src={streamUrl.url}
+                alt={camera.name}
+                className="absolute inset-0 w-full h-full object-contain bg-black"
+                draggable={false}
+                onError={() => setStreamFailed(true)}
+              />
+            ) : frame?.url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={

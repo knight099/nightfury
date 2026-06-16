@@ -8,6 +8,7 @@ from models import CameraConfig
 from camera_worker import CameraWorker
 from gemini_client import GeminiClient
 from api_client import ApiClient
+from mjpeg_server import MJPEGServer
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class WorkerSupervisor:
         self.workers: dict[str, CameraWorker] = {}  # camera_id → worker
         self.gemini = GeminiClient()  # shared across all workers
         self.api_client = ApiClient()  # used by supervisor for assignments
+        self.mjpeg_server = MJPEGServer(lambda cid: self.workers.get(cid))
 
     async def run(self):
         """Main supervisor loop."""
@@ -72,6 +74,8 @@ class WorkerSupervisor:
         for cam_config in cameras[:config.max_cameras]:
             await self._start_worker(cam_config)
 
+        await self.mjpeg_server.start()
+
         reconcile_task = asyncio.create_task(self._reconcile_loop())
         try:
             while True:
@@ -84,6 +88,7 @@ class WorkerSupervisor:
                 await reconcile_task
             except (asyncio.CancelledError, Exception):
                 pass
+            await self.mjpeg_server.stop()
             await self._stop_all()
             try:
                 await self.api_client.close()

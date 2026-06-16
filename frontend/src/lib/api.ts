@@ -117,6 +117,10 @@ class ApiClient {
     return res.json();
   }
 
+  async getCameraStreamUrl(cameraId: string): Promise<{ url: string; expires_at: number }> {
+    return this.request(`/api/cameras/${cameraId}/stream-url`);
+  }
+
   // Events
   async getEvents(params: Record<string, string | number | undefined> = {}) {
     const qs = new URLSearchParams(
@@ -126,7 +130,7 @@ class ApiClient {
   }
 
   async getEvent(id: string) {
-    return this.request<{ event: Event }>(`/api/events/${id}`);
+    return this.request<Event>(`/api/events/${id}`);
   }
 
   async submitFeedback(id: string, feedback: string, label?: string) {

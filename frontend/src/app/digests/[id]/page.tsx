@@ -33,7 +33,7 @@ export default function DigestDetailPage() {
         )}
       </header>
 
-      <section className="grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Stat label="Events" value={p.total_events} />
         {Object.entries(p.by_severity).map(([k, v]) => (
           <Stat key={k} label={k} value={v} />

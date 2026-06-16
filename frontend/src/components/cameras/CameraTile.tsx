@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { VideoOff } from "lucide-react";
@@ -25,11 +26,22 @@ function relativeTime(iso: string): string {
 }
 
 export function CameraTile({ camera, lastEventAt }: CameraTileProps) {
+  const [streamFailed, setStreamFailed] = useState(false);
+
+  const { data: streamUrl } = useQuery({
+    queryKey: ["camera-stream-url", camera.id],
+    queryFn: () => api.getCameraStreamUrl(camera.id),
+    refetchInterval: 10 * 60 * 1000,
+    refetchIntervalInBackground: false,
+    enabled: !streamFailed,
+  });
+
   const { data: frame } = useQuery({
     queryKey: ["camera-latest-frame", camera.id],
     queryFn: () => api.getCameraLatestFrame(camera.id),
     refetchInterval: 2000,
     refetchIntervalInBackground: false,
+    enabled: streamFailed,
   });
 
   const online = camera.status === "online";
@@ -41,7 +53,17 @@ export function CameraTile({ camera, lastEventAt }: CameraTileProps) {
       className="group relative block bg-[#111111] border border-[#2A2A2A] rounded-lg overflow-hidden hover:border-[#1E90FF] transition-colors"
     >
       <div className="relative w-full bg-[#1F1F1F]" style={{ aspectRatio: "16 / 9" }}>
-        {frame?.url ? (
+        {!streamFailed && streamUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={streamUrl.url}
+            src={streamUrl.url}
+            alt={camera.name}
+            className="absolute inset-0 w-full h-full object-cover"
+            draggable={false}
+            onError={() => setStreamFailed(true)}
+          />
+        ) : frame?.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={
