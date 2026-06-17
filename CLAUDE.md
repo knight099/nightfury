@@ -53,11 +53,11 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 **P0 — Must do before first real test:**
 - End-to-end test with real camera (CP Plus RTSP → worker → backend → frontend)
 
-**P1 — Must do before production:**
-- Alembic migration files (currently using create_all)
-- Rate limiting middleware (Redis sliding window)
-- GCS signed URLs (currently returning gs:// paths — frontend can't load them)
-- Production deployment: Terraform, Cloud Run (backend+frontend), GCE (worker)
+**P1 — COMPLETE:**
+- ✅ Alembic migration files (3 migration files covering all 13 tables; alembic/env.py wired)
+- ✅ Rate limiting middleware (Redis sliding window in app/core/rate_limit.py, enabled by default)
+- ✅ GCS signed URLs (V4 signing in app/services/gcs.py; data-URI fallback for local dev)
+- ✅ Production deployment: terraform/ (Cloud Run + GCE + Secret Manager + GCS IAM), .github/workflows/deploy.yml (GCP + Vercel CI/CD), /healthz endpoint added
 
 **P2 — COMPLETE:**
 - ✅ Zone drawing editor (canvas polygon tool on camera frame — ZonesEditor.tsx wired into /cameras/[id])

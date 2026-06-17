@@ -1,120 +1,169 @@
-name: Deploy to AWS App Runner
+name: Deploy to GCP
 
 on:
   push:
     branches: [main]
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  GCP_PROJECT:  ${{ secrets.GCP_PROJECT }}
+  GCP_REGION:   asia-south1
+  AR_HOST:      asia-south1-docker.pkg.dev
+  AR_REPO:      nightwatch
+  BACKEND_SERVICE: nightwatch-backend
+  WORKER_ZONE:  asia-south1-a
+  WORKER_NAME:  nightwatch-worker
 
 jobs:
+  # ── Backend → Cloud Run ──────────────────────────────────────────────────────
   deploy-backend:
-    name: Build & Deploy Backend
+    name: Backend → Cloud Run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # for Workload Identity Federation
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $AR_HOST --quiet
 
       - name: Build and push backend image
         working-directory: backend
         run: |
-          IMAGE_URI=$ECR_REGISTRY/nightwatch-backend:${{ github.sha }}
-          docker build -t $IMAGE_URI .
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          IMAGE=$AR_HOST/$GCP_PROJECT/$AR_REPO/backend:${{ github.sha }}
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          # Also tag as :latest for the worker cloud-init pull
+          docker tag "$IMAGE" "$AR_HOST/$GCP_PROJECT/$AR_REPO/backend:latest"
+          docker push "$AR_HOST/$GCP_PROJECT/$AR_REPO/backend:latest"
+          echo "BACKEND_IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      - name: Deploy to App Runner (backend)
+      - name: Deploy to Cloud Run
         run: |
-          aws apprunner update-service \
-            --service-arn ${{ secrets.APPRUNNER_BACKEND_ARN }} \
-            --source-configuration "{
-              \"ImageRepository\": {
-                \"ImageIdentifier\": \"$IMAGE_URI\",
-                \"ImageRepositoryType\": \"ECR\",
-                \"ImageConfiguration\": {
-                  \"Port\": \"8080\",
-                  \"RuntimeEnvironmentSecrets\": {
-                    \"DATABASE_URL\":          \"${{ secrets.DATABASE_URL }}\",
-                    \"REDIS_URL\":             \"${{ secrets.REDIS_URL }}\",
-                    \"SECRET_KEY\":            \"${{ secrets.SECRET_KEY }}\",
-                    \"GEMINI_API_KEY\":        \"${{ secrets.GEMINI_API_KEY }}\",
-                    \"GCS_BUCKET_NAME\":       \"${{ secrets.GCS_BUCKET_NAME }}\",
-                    \"WORKER_API_KEY\":        \"${{ secrets.WORKER_API_KEY }}\",
-                    \"SUPER_ADMIN_USERNAME\":  \"${{ secrets.SUPER_ADMIN_USERNAME }}\",
-                    \"SUPER_ADMIN_PASSWORD\":  \"${{ secrets.SUPER_ADMIN_PASSWORD }}\",
-                    \"SENDGRID_API_KEY\":      \"${{ secrets.SENDGRID_API_KEY }}\",
-                    \"GUPSHUP_API_KEY\":       \"${{ secrets.GUPSHUP_API_KEY }}\"
-                  }
-                }
-              }
-            }"
+          gcloud run deploy $BACKEND_SERVICE \
+            --image "$BACKEND_IMAGE" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --quiet
 
-      - name: Wait for backend deployment
+      - name: Verify deployment
         run: |
-          aws apprunner wait service-updated \
-            --service-arn ${{ secrets.APPRUNNER_BACKEND_ARN }}
+          URL=$(gcloud run services describe $BACKEND_SERVICE \
+            --region "$GCP_REGION" --format "value(status.url)")
+          echo "Backend URL: $URL"
+          curl -fsS "$URL/healthz" || (echo "Health check failed" && exit 1)
 
+  # ── Worker → GCE ────────────────────────────────────────────────────────────
+  deploy-worker:
+    name: Worker → GCE
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $AR_HOST --quiet
+
+      - name: Build and push worker image
+        working-directory: worker
+        run: |
+          IMAGE=$AR_HOST/$GCP_PROJECT/$AR_REPO/worker:${{ github.sha }}
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          docker tag "$IMAGE" "$AR_HOST/$GCP_PROJECT/$AR_REPO/worker:latest"
+          docker push "$AR_HOST/$GCP_PROJECT/$AR_REPO/worker:latest"
+          echo "WORKER_IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Rolling update worker (SSH + docker pull)
+        run: |
+          # SSH into the worker VM and pull the new image, then restart the service
+          gcloud compute ssh $WORKER_NAME \
+            --zone "$WORKER_ZONE" \
+            --command "
+              sudo docker pull $WORKER_IMAGE && \
+              sudo systemctl restart nightwatch-worker
+            " \
+            --quiet \
+            --tunnel-through-iap
+
+      - name: Verify worker health
+        run: |
+          # Give the worker 30s to restart and connect to the backend
+          sleep 30
+          STATUS=$(gcloud compute ssh $WORKER_NAME \
+            --zone "$WORKER_ZONE" \
+            --command "sudo systemctl is-active nightwatch-worker" \
+            --quiet \
+            --tunnel-through-iap 2>&1)
+          echo "Worker systemd status: $STATUS"
+          if [ "$STATUS" != "active" ]; then
+            echo "Worker failed to start — check logs:"
+            gcloud compute ssh $WORKER_NAME \
+              --zone "$WORKER_ZONE" \
+              --command "sudo journalctl -u nightwatch-worker -n 50" \
+              --quiet \
+              --tunnel-through-iap
+            exit 1
+          fi
+
+  # ── Frontend → Vercel ───────────────────────────────────────────────────────
   deploy-frontend:
-    name: Build & Deploy Frontend
+    name: Frontend → Vercel
     runs-on: ubuntu-latest
     needs: deploy-backend
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
 
-      - name: Build and push frontend image
+      - name: Build (type check + lint)
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
-        run: |
-          IMAGE_URI=$ECR_REGISTRY/nightwatch-frontend:${{ github.sha }}
-          docker build \
-            --build-arg NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-            -t $IMAGE_URI .
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+        run: npm run build
 
-      - name: Deploy to App Runner (frontend)
+      - name: Deploy to Vercel
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN:   ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID:  ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          aws apprunner update-service \
-            --service-arn ${{ secrets.APPRUNNER_FRONTEND_ARN }} \
-            --source-configuration "{
-              \"ImageRepository\": {
-                \"ImageIdentifier\": \"$IMAGE_URI\",
-                \"ImageRepositoryType\": \"ECR\",
-                \"ImageConfiguration\": {
-                  \"Port\": \"3000\",
-                  \"RuntimeEnvironmentVariables\": {
-                    \"NEXT_PUBLIC_API_URL\": \"${{ secrets.NEXT_PUBLIC_API_URL }}\"
-                  }
-                }
-              }
-            }"
-
-      - name: Wait for frontend deployment
-        run: |
-          aws apprunner wait service-updated \
-            --service-arn ${{ secrets.APPRUNNER_FRONTEND_ARN }}
+          npm install -g vercel@latest
+          vercel deploy --prod \
+            --token "$VERCEL_TOKEN" \
+            --build-env NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
+            --yes

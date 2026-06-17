@@ -1,0 +1,55 @@
+#cloud-config
+# Container OS (COS) cloud-init for the Nightwatch worker GCE instance.
+# Automatically pulls the worker Docker image and starts it with the correct env.
+
+write_files:
+  - path: /etc/systemd/system/nightwatch-worker.service
+    permissions: "0644"
+    owner: root
+    content: |
+      [Unit]
+      Description=Nightwatch Worker
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Restart=on-failure
+      RestartSec=10
+      ExecStartPre=/usr/bin/docker pull ${worker_image}
+      ExecStart=/usr/bin/docker run \
+        --name nightwatch-worker \
+        --rm \
+        --network host \
+        -v /mnt/data:/data \
+        -e BACKEND_URL=${backend_url} \
+        -e WORKER_API_KEY=${worker_api_key} \
+        -e STREAM_TOKEN_SECRET=${stream_token_secret} \
+        -e GCS_BUCKET=${gcs_bucket} \
+        -e GCS_PROJECT=${gcs_project} \
+        -e GEMINI_API_KEY=${gemini_api_key} \
+        -e OFFLINE_QUEUE_PATH=/data/offline_queue.db \
+        -e MJPEG_SERVER_ENABLED=true \
+        -e MJPEG_SERVER_HOST=0.0.0.0 \
+        -e MJPEG_SERVER_PORT=8090 \
+        ${worker_image}
+      ExecStop=/usr/bin/docker stop nightwatch-worker
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # Mount the attached data disk on first boot
+  - |
+    if ! blkid /dev/disk/by-id/google-data; then
+      mkfs.ext4 -F /dev/disk/by-id/google-data
+    fi
+  - mkdir -p /mnt/data
+  - mount -o discard,defaults /dev/disk/by-id/google-data /mnt/data
+  - echo "/dev/disk/by-id/google-data /mnt/data ext4 discard,defaults,nofail 0 2" >> /etc/fstab
+  # Authenticate Docker to Artifact Registry using the instance service account
+  - docker-credential-gcr configure-docker --registries asia-south1-docker.pkg.dev
+  # Enable + start the worker service
+  - systemctl daemon-reload
+  - systemctl enable nightwatch-worker
+  - systemctl start nightwatch-worker

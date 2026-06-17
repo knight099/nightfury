@@ -1,0 +1,33 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it contains sensitive secrets.
+
+project_id = "nightwatch-498116"
+region     = "asia-south1"
+gcs_bucket = "nightwatch-events"
+
+# Docker images — built by CI and pushed to Artifact Registry
+backend_image = "asia-south1-docker.pkg.dev/nightwatch-498116/nightwatch/backend:latest"
+worker_image  = "asia-south1-docker.pkg.dev/nightwatch-498116/nightwatch/worker:latest"
+
+# Database + Cache (Neon + Upstash — already running)
+database_url = "postgresql+asyncpg://user:pass@host/db"
+redis_url    = "rediss://default:token@host:6379"
+
+# Secrets
+secret_key           = "64-char-hex-string-for-aes-256-gcm"
+worker_api_key       = "strong-random-worker-key"
+stream_token_secret  = "strong-random-stream-token-secret"
+super_admin_username = "super_nightvision"
+super_admin_password = "strong-password"
+
+# External API keys
+gemini_api_key           = ""   # optional if using Vertex AI
+sendgrid_api_key         = ""
+gupshup_api_key          = ""
+gupshup_app_name         = ""
+whatsapp_business_number = ""
+
+# Worker VM
+worker_zone         = "asia-south1-a"
+worker_machine_type = "e2-standard-2"
+worker_disk_size_gb = 50
