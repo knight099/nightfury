@@ -59,16 +59,16 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 - GCS signed URLs (currently returning gs:// paths — frontend can't load them)
 - Production deployment: Terraform, Cloud Run (backend+frontend), GCE (worker)
 
-**P2 — Should do for good MVP:**
-- Zone drawing editor (canvas polygon tool on camera frame)
-- WebSocket real-time feed (replace 10s polling in frontend)
-- Nginx-RTMP server config (for cloud-hosted push mode)
-- Admin UI page (super_admin: orgs/users management)
-- SQLite offline queue in worker (for when backend is unreachable)
-- Full test suites (backend integration, worker e2e)
-- Live camera view: worker-hosted MJPEG stream via signed stream-token URL (`GET /api/cameras/{id}/stream-url` → `GET /stream/{camera_id}?token=...`), with snapshot polling (`GET /api/cameras/{id}/latest-frame`, worker uploads `latest/{camera_id}.webp` every 2s) as fallback.
-- Per-camera event view at `/cameras/[id]` with snapshot + filtered events.
-- Persistent chat side panel: live event stream + ask-Gemini per camera/event.
+**P2 — COMPLETE:**
+- ✅ Zone drawing editor (canvas polygon tool on camera frame — ZonesEditor.tsx wired into /cameras/[id])
+- ✅ WebSocket real-time feed (useEventsSocket hook used on dashboard + events pages + chat panel)
+- ✅ Nginx-RTMP server config (nginx/nginx.conf + nginx/Dockerfile for push-mode cameras)
+- ✅ Admin UI page (/admin page with orgs + users CRUD, super_admin gated)
+- ✅ SQLite offline queue in worker (offline_queue.py + drain-on-heartbeat in api_client.py)
+- ✅ Full test suites (backend: 50+ tests across events/cameras/alerts/admin/digests/agents/chat; worker: 15+ tests across motion/ring/prompt/frame_sampler/offline_queue)
+- ✅ Live camera view (MJPEG primary + signed stream-token + GCS snapshot fallback)
+- ✅ Per-camera event view (/cameras/[id] with live stream + filtered events)
+- ✅ Persistent chat side panel (Events tab WebSocket feed + Ask tab Gemini Q&A, Ctrl+K toggle)
 
 **P3 — Nice to have:**
 - Loading skeletons + error boundaries
