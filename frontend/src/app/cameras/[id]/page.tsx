@@ -13,6 +13,7 @@ import { useAuthStore } from "@/lib/store";
 import { useEventsSocket } from "@/lib/useEventsSocket";
 import { useChatContextStore } from "@/lib/chatContext";
 import { ZonesEditor } from "@/components/cameras/ZonesEditor";
+import { WebRTCPlayer } from "@/components/cameras/WebRTCPlayer";
 import type { Camera, Event, PaginatedResponse } from "@/types";
 
 function relativeTime(iso: string): string {
@@ -49,6 +50,7 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
   }, [id, setCameraContext]);
 
   const [showZones, setShowZones] = useState(false);
+  const [webrtcFailed, setWebrtcFailed] = useState(true);
   const [streamFailed, setStreamFailed] = useState(false);
 
   const { data: streamUrl } = useQuery({
@@ -56,7 +58,7 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
     queryFn: () => api.getCameraStreamUrl(id),
     refetchInterval: 10 * 60 * 1000,
     refetchIntervalInBackground: false,
-    enabled: !!camera && !streamFailed,
+    enabled: !!camera && webrtcFailed && !streamFailed,
   });
 
   const { data: frame } = useQuery({
@@ -64,7 +66,7 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
     queryFn: () => api.getCameraLatestFrame(id),
     refetchInterval: 1000,
     refetchIntervalInBackground: false,
-    enabled: !!camera && streamFailed,
+    enabled: !!camera && webrtcFailed && streamFailed,
   });
 
   const { data: eventsData, isLoading: eventsLoading } = useQuery<PaginatedResponse<Event>>({
@@ -174,7 +176,13 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-3">
           <div className="relative w-full bg-[#111111] border border-[#2A2A2A] rounded-lg overflow-hidden" style={{ aspectRatio: "16 / 9" }}>
-            {!streamFailed && streamUrl ? (
+            {!webrtcFailed ? (
+              <WebRTCPlayer
+                cameraId={id}
+                className="absolute inset-0 w-full h-full object-contain bg-black"
+                onError={() => setWebrtcFailed(true)}
+              />
+            ) : !streamFailed && streamUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={streamUrl.url}

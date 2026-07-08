@@ -63,10 +63,12 @@ func main() {
 		}
 	}()
 
-	// WebRTC signaling HTTP server
+	// WebRTC signaling HTTP server (agent push: /signal, browser view: /view)
 	signalSrv := webrtcsignal.NewServerWithVerifier(verifier, reg)
+	viewerSrv := webrtcsignal.NewViewerServer(cfg.StreamTokenSecret, reg)
 	mux := http.NewServeMux()
 	mux.Handle("/signal", signalSrv)
+	mux.Handle("/view", viewerSrv)
 	httpSrv := &http.Server{
 		Addr:              cfg.WebRTCSignalAddr,
 		Handler:           mux,

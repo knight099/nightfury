@@ -121,6 +121,13 @@ class ApiClient {
     return this.request(`/api/cameras/${cameraId}/stream-url`);
   }
 
+  async cameraWebRTCOffer(cameraId: string, offer: string): Promise<{ answer: string }> {
+    return this.request<{ answer: string }>(`/api/cameras/${cameraId}/webrtc-offer`, {
+      method: "POST",
+      body: JSON.stringify({ offer }),
+    });
+  }
+
   // Events
   async getEvents(params: Record<string, string | number | undefined> = {}) {
     const qs = new URLSearchParams(
@@ -367,6 +374,14 @@ class ApiClient {
     return this.request<{ camera_id: string; status: string }>(`/api/agents/${agentId}/cameras`, {
       method: "POST",
       body: JSON.stringify(body),
+    });
+  }
+
+  // Device-initiated provisioning
+  async claimDevice(code: string, orgId?: string): Promise<{ agent_id: string; org_id: string; message: string }> {
+    return this.request<{ agent_id: string; org_id: string; message: string }>("/api/devices/claim", {
+      method: "POST",
+      body: JSON.stringify({ code, ...(orgId ? { org_id: orgId } : {}) }),
     });
   }
 }

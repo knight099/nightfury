@@ -61,33 +61,38 @@ async def create_pair_code(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PairCodeResponse:
-    if user.org_id is not None:
-        org_id = user.org_id
-    elif payload.org_id is not None:
+    if user.role == "super_admin":
+        # super_admin has no org of their own; they must pass org_id in the body
+        if payload.org_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="super_admin must pass org_id in the request body",
+            )
         org = (
             await db.execute(select(Organization).where(Organization.id == payload.org_id))
         ).scalar_one_or_none()
         if org is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="org not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="org not found")
         org_id = org.id
+    elif user.org_id is not None:
+        org_id = user.org_id
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="super_admin must select an org first",
+            detail="user has no org assigned",
         )
 
-    r = await get_redis()
-    rate_key = f"paircode:rate:{user.id}"
-    count = await r.incr(rate_key)
-    if count == 1:
-        await r.expire(rate_key, 3600)
-    if count > 5:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="too many pairing codes — try again in an hour",
-        )
+    if user.role != "super_admin":
+        r = await get_redis()
+        rate_key = f"paircode:rate:{user.id}"
+        count = await r.incr(rate_key)
+        if count == 1:
+            await r.expire(rate_key, 3600)
+        if count > 5:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="too many pairing codes — try again in an hour",
+            )
 
     service = PairingService(db)
     code = await service.mint_code(org_id, user.id)

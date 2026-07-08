@@ -18,6 +18,227 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 - **Empty windows:** templated "all quiet" digest, no Gemini call.
 - **Gemini failure:** one retry, then fallback degraded digest from event metadata so users always receive something.
 
+## Running Locally
+
+### One-command start (recommended)
+```bash
+./start.sh
+```
+Starts all five services in order: backend → relay → worker → agent → frontend.
+Uses cloud DB (Neon) + cloud Redis (Upstash) — no Docker needed for deps.
+All logs go to `/tmp/nightwatch-*.log`. Press Ctrl+C to stop everything.
+
+**Prerequisites:**
+- `uv` installed (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- `go` 1.21+ installed
+- `node` 20+ + `npm` installed
+- `ffmpeg` installed (for worker)
+- `backend/.env` filled in (copy `backend/.env.example`)
+- `worker/.env` filled in (copy `worker/.env.example`)
+
+### Run each service independently
+
+**Backend (port 8080):**
+```bash
+cd backend
+cp .env.example .env   # fill in POSTGRES_URL, REDIS_URL, secrets
+uv run alembic upgrade head   # run once to apply DB migrations
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+**Worker (MJPEG port 8090):**
+```bash
+cd worker
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env   # fill in BACKEND_URL, GEMINI_API_KEY, GCS_BUCKET
+.venv/bin/python3 main.py
+```
+
+**Relay (gRPC :9443, RTSP :8554, WebRTC :9080):**
+```bash
+cd relay
+cp .env.example .env   # fill in STREAM_TOKEN_SECRET, RELAY_BACKEND_URL
+go build -o nightwatch-relay ./cmd/relay/
+./nightwatch-relay
+```
+
+**Agent (device-initiated pairing, default):**
+```bash
+cd agent
+go build -o nightwatch-agent ./cmd/agent/
+rm -f state/token.json state/device_id   # force re-pair if already paired
+BACKEND_URL=http://localhost:8080 RELAY_INSECURE=true RELAY_ADDR=localhost:9443 ./nightwatch-agent
+# Agent logs: DEVICE PAIRING CODE: NW-XXXX
+# Go to http://localhost:3000/cameras/connect → "Nightwatch Device" → enter code
+```
+
+Set `AGENT_PAIR_MODE=localui` to use the legacy dashboard-code → local web-UI flow instead.
+
+**Frontend (port 3000):**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Testing device-initiated pairing locally (no Pi needed)
+```bash
+# 1. Start backend + frontend (./start.sh or independently above)
+# 2. Delete old agent state to force re-pair
+rm -f agent/state/token.json agent/state/device_id
+# 3. Run agent pointing at local backend
+cd agent && BACKEND_URL=http://localhost:8080 RELAY_INSECURE=true ./nightwatch-agent
+# 4. Copy the NW-XXXX code from agent logs
+# 5. Open http://localhost:3000/cameras/connect → Nightwatch Device → enter code
+```
+
+---
+
+## Running in Production
+
+### Infrastructure overview
+| Service  | Host                          | Notes                                      |
+|----------|-------------------------------|--------------------------------------------|
+| Backend  | Vercel (serverless) or Cloud Run | `POSTGRES_URL`, `REDIS_URL` from Supabase/Upstash |
+| Worker   | GCE VM or dedicated server   | Needs FFmpeg + GCS access + direct NVR LAN |
+| Relay    | GCE VM with public IP        | Ports 9443 (gRPC), 8554 (RTSP), 9080 (WebRTC) open |
+| Agent    | Customer's LAN device        | Outbound-only, no inbound ports needed     |
+| Frontend | Vercel                       | Static Next.js build                       |
+
+### Backend — Cloud Run or Vercel
+```bash
+# Env vars to set (Secret Manager / Vercel dashboard):
+POSTGRES_URL=postgresql+asyncpg://...
+REDIS_URL=rediss://...
+SECRET_KEY=<32-byte random hex>
+WORKER_API_KEY=<shared with worker>
+STREAM_TOKEN_SECRET=<shared with relay + worker>
+RELAY_PUBLIC_URL=grpcs://relay.yourdomain.com:9443
+RELAY_WEBRTC_URL=http://<relay-internal-ip>:9080
+SUPER_ADMIN_USERNAME=super_nightvision
+SUPER_ADMIN_PASSWORD=<strong password>
+GCS_BUCKET=nightwatch-prod
+GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcs-sa.json
+
+# Apply migrations once (run from local or CI):
+cd backend && uv run alembic upgrade head
+```
+
+### Worker — GCE VM
+```bash
+# On the VM:
+git clone ... && cd vision/worker
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# Fill .env:
+BACKEND_URL=https://api.yourdomain.com
+WORKER_API_KEY=<same as backend WORKER_API_KEY>
+GEMINI_API_KEY=...
+GCS_BUCKET=nightwatch-prod
+STREAM_TOKEN_SECRET=<same as backend>
+MJPEG_SERVER_HOST=0.0.0.0
+MJPEG_SERVER_PORT=8090
+
+# Run as a systemd service:
+sudo tee /etc/systemd/system/nightwatch-worker.service > /dev/null <<EOF
+[Unit]
+Description=Nightwatch Worker
+After=network.target
+
+[Service]
+WorkingDirectory=/home/ubuntu/vision/worker
+EnvironmentFile=/home/ubuntu/vision/worker/.env
+ExecStart=/home/ubuntu/vision/worker/.venv/bin/python3 main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now nightwatch-worker
+```
+
+### Relay — GCE VM
+```bash
+# On the VM:
+cd vision/relay
+go build -o nightwatch-relay ./cmd/relay/
+# Fill .env:
+RELAY_GRPC_ADDR=:9443
+RELAY_RTSP_ADDR=:8554
+RELAY_WEBRTC_ADDR=:9080
+RELAY_BACKEND_URL=https://api.yourdomain.com
+RELAY_WORKER_KEY=<same as WORKER_API_KEY>
+STREAM_TOKEN_SECRET=<same as backend>
+
+# TLS for gRPC (agents connect over the public internet):
+# Use a reverse proxy (nginx/caddy) to terminate TLS on port 9443,
+# or set RELAY_TLS_CERT / RELAY_TLS_KEY env vars if relay supports it.
+
+# Systemd service:
+sudo tee /etc/systemd/system/nightwatch-relay.service > /dev/null <<EOF
+[Unit]
+Description=Nightwatch Relay
+After=network.target
+
+[Service]
+WorkingDirectory=/home/ubuntu/vision/relay
+EnvironmentFile=/home/ubuntu/vision/relay/.env
+ExecStart=/home/ubuntu/vision/relay/nightwatch-relay
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now nightwatch-relay
+```
+
+**Firewall rules to open on the relay VM:**
+```
+TCP 9443   # gRPC (agent tunnel)
+TCP 8554   # RTSP (worker pulls from relay)
+TCP 9080   # WebRTC signaling (browser → backend → relay)
+```
+
+### Agent — Customer device (Pi / NAS / OpenWRT)
+```bash
+# Download pre-built binary or build from source:
+curl -L https://releases.yourdomain.com/agent/latest/nightwatch-agent-linux-arm64 -o nightwatch-agent
+chmod +x nightwatch-agent
+
+# Run — device-initiated pairing (default):
+BACKEND_URL=https://api.yourdomain.com ./nightwatch-agent
+# Agent prints NW-XXXX — customer enters it at yourdomain.com/cameras/connect
+
+# Or via Docker:
+docker run -d --name nightwatch-agent \
+  --network host \
+  --restart unless-stopped \
+  -e BACKEND_URL=https://api.yourdomain.com \
+  -v /var/lib/nightwatch:/data \
+  nightwatchhq/agent:latest
+```
+
+### Frontend — Vercel
+```bash
+cd frontend
+# Set in Vercel dashboard:
+NEXT_PUBLIC_API_URL=https://api.yourdomain.com
+NEXT_PUBLIC_RELAY_URL=grpcs://relay.yourdomain.com:9443
+
+# Deploy:
+vercel --prod
+# Or via GitHub Actions (see .github/workflows/deploy.yml)
+```
+
+### CI/CD
+GitHub Actions workflow at `.github/workflows/deploy.yml` handles:
+- Backend: builds Docker image → pushes to Artifact Registry → deploys to Cloud Run
+- Frontend: `npm run build` → deploys to Vercel
+- Migrations: `alembic upgrade head` runs as a Cloud Run job before backend deploy
+
+---
+
 ## Current Project Status (What's Done)
 
 ### Backend (COMPLETE — 45 routes, verified loading)
@@ -73,11 +294,11 @@ Lets non-technical users connect home NVRs (CP Plus, Hikvision, Dahua, etc.) wit
 **P3 — Nice to have:**
 - Loading skeletons + error boundaries
 - Analytics/charts page
-- Settings/team management page
+- ✅ Settings/team management page (backend /api/settings/ + frontend /settings)
 - Search across events
 
-**Future (not in MVP):**
-- Live video feed via WebRTC: relay republishes camera streams as WebRTC. Lowest latency (~1s). Requires WebRTC signaling + TURN. Out of scope for MVP; revisit when snapshot polling proves insufficient.
+**Future (partially done):**
+- ✅ Live video via WebRTC (relay path): relay/webrtcsignal/viewer.go serves H.264 video track to browser; backend POST /api/cameras/{id}/webrtc-offer proxies offer to relay with HMAC-signed view_token; frontend WebRTCPlayer component tries WebRTC first, falls back to MJPEG, then snapshot polling. STREAM_TOKEN_SECRET shared between backend and relay. TURN server not yet configured (works on LAN / same-network; may need TURN for NAT traversal in production).
 
 ## Monorepo Structure
 ```
@@ -182,4 +403,6 @@ uploaded to cloud storage.
 - Don't add ORM raw queries — SQLAlchemy models only
 - Don't hardcode IPs, ports, or credentials
 - Don't add features not in MVP_PLAN.md without explicit instruction
-- Don't add HLS, raw RTSP republishing, or WebRTC for the live view — live view uses the worker-hosted MJPEG stream (signed stream-token URL from `/api/cameras/{id}/stream-url`), falling back to snapshot polling. WebRTC live video via the relay remains a planned future feature for the home-agent path; do not implement it without explicit instruction.
+- Don't add HLS or raw RTSP republishing to the live view.
+- Live view priority order: (1) WebRTC via relay (`POST /api/cameras/{id}/webrtc-offer` → relay `/view`), (2) MJPEG worker stream (signed URL), (3) snapshot polling. WebRTC falls back automatically when the camera is not on the relay (returns 404/503). Do not add TURN servers without explicit instruction.
+- Don't add WebRTC direct-to-browser from the worker — WebRTC goes through the relay only.

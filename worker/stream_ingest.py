@@ -19,6 +19,7 @@ class StreamIngest:
         self.max_reconnects = 5
         self.frame_size = config.frame_width * config.frame_height * 3
         self._running = False
+        self._stop_event: asyncio.Event = asyncio.Event()
 
     def _get_source_url(self) -> str:
         if self.config.ingest_mode == "rtsp_pull":
@@ -52,6 +53,7 @@ class StreamIngest:
         cmd = self._build_ffmpeg_cmd()
         logger.info(f"[{self.config.name}] Starting FFmpeg: {' '.join(cmd[:6])}...")
 
+        self._stop_event.clear()
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -63,13 +65,16 @@ class StreamIngest:
 
     async def stop(self):
         self._running = False
-        if self.process:
-            self.process.terminate()
+        self._stop_event.set()
+        proc = self.process
+        self.process = None
+        if proc:
+            proc.terminate()
             try:
-                self.process.wait(timeout=5)
+                await asyncio.to_thread(proc.wait, timeout=5)
             except subprocess.TimeoutExpired:
-                self.process.kill()
-            self.process = None
+                proc.kill()
+                await asyncio.to_thread(proc.wait)
 
     def read_frame(self) -> np.ndarray | None:
         """Read one raw frame. Returns None on stream error."""
@@ -86,6 +91,9 @@ class StreamIngest:
 
     async def reconnect(self) -> bool:
         """Attempt to reconnect. Returns True if successful."""
+        if not self._running:
+            return False
+
         self.reconnect_attempts += 1
         if self.reconnect_attempts > self.max_reconnects:
             logger.error(f"[{self.config.name}] Max reconnects exceeded")
@@ -93,7 +101,16 @@ class StreamIngest:
 
         wait = min(5 * self.reconnect_attempts, 30)
         logger.warning(f"[{self.config.name}] Reconnecting in {wait}s (attempt {self.reconnect_attempts})")
-        await asyncio.sleep(wait)
+        try:
+            await asyncio.wait_for(asyncio.shield(self._stop_event.wait()), timeout=wait)
+            # stop_event fired before the wait elapsed — shutdown in progress
+            return False
+        except asyncio.TimeoutError:
+            pass  # normal case: waited the full backoff interval
+
+        if not self._running:
+            return False
+
         await self.stop()
         try:
             await self.start()

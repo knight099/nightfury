@@ -22,7 +22,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/google/uuid"
+
 	"github.com/nightwatch/agent/internal/config"
+	"github.com/nightwatch/agent/internal/devicepair"
 	"github.com/nightwatch/agent/internal/discovery"
 	"github.com/nightwatch/agent/internal/localui"
 	"github.com/nightwatch/agent/internal/pairing"
@@ -62,12 +65,15 @@ func (p *pairAdapter) Pair(ctx context.Context, code string) error {
 }
 
 func main() {
+	// config.Load() auto-loads .env from cwd before reading env vars.
 	cfg := config.Load()
 	slog.Info("agent starting", "relay", cfg.RelayAddr, "insecure", cfg.RelayInsecure)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// BACKEND_URL is now set by config.Load()'s dotenv loader if it wasn't
+	// already in the environment.
 	backend := os.Getenv("BACKEND_URL")
 	if backend == "" {
 		backend = "https://api.nightwatch.local"
@@ -80,31 +86,67 @@ func main() {
 	s := store.New(tokenPath)
 
 	if !s.Exists() {
-		slog.Info("not paired yet — open http://localhost:8765 and enter code", "ui_addr", cfg.LocalUIAddr)
-		adapter := &pairAdapter{
-			backend:   backend,
-			store:     s,
-			machineID: machineID(),
-			pubkey:    ensurePubkey(cfg.StateDir),
-			version:   agentVersion,
-		}
-		go func() {
-			if err := localui.Serve(cfg.LocalUIAddr, adapter); err != nil {
-				log.Printf("local UI server exited: %v", err)
+		pairMode := os.Getenv("AGENT_PAIR_MODE")
+		mid := machineID()
+		pub := ensurePubkey(cfg.StateDir)
+
+		if pairMode == "localui" {
+			// Legacy: user opens a local web page and enters a code from the dashboard.
+			slog.Info("pairing via local UI", "ui_addr", cfg.LocalUIAddr)
+			adapter := &pairAdapter{
+				backend:   backend,
+				store:     s,
+				machineID: mid,
+				pubkey:    pub,
+				version:   agentVersion,
 			}
-		}()
-		// Block until paired or signal received.
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for !s.Exists() {
-			select {
-			case <-ctx.Done():
-				slog.Info("agent shutting down before pairing completed")
+			go func() {
+				if err := localui.Serve(cfg.LocalUIAddr, adapter); err != nil {
+					log.Printf("local UI server exited: %v", err)
+				}
+			}()
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for !s.Exists() {
+				select {
+				case <-ctx.Done():
+					slog.Info("agent shutting down before pairing completed")
+					return
+				case <-ticker.C:
+				}
+			}
+		} else {
+			// Default: device-initiated provisioning.
+			// Device generates NW-XXXX, registers with cloud, waits for customer to claim it.
+			deviceID := loadOrCreateDeviceID(cfg.StateDir)
+			code := devicepair.GenerateCode()
+			dc := devicepair.NewClient(backend)
+
+			displayCode, err := dc.Provision(ctx, deviceID, code, pub, mid, agentVersion)
+			if err != nil {
+				slog.Error("device provision failed", "err", err)
 				return
-			case <-ticker.C:
 			}
+			slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			slog.Info("DEVICE PAIRING CODE: "+displayCode, "action", "enter at nightwatch.ai → Cameras → Connect Device")
+			slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+			tok, err := dc.PollUntilClaimed(ctx, deviceID)
+			if err != nil {
+				slog.Error("provisioning failed", "err", err)
+				return
+			}
+			if err := s.Save(store.Token{
+				DeviceToken: tok.DeviceToken,
+				RelayURL:    tok.RelayURL,
+				OrgID:       tok.OrgID,
+				AgentID:     tok.AgentID,
+			}); err != nil {
+				slog.Error("failed to save device token", "err", err)
+				return
+			}
+			slog.Info("device claimed — starting tunnel", "agent_id", tok.AgentID)
 		}
-		slog.Info("paired — starting tunnel")
 	}
 
 	tok, err := s.Load()
@@ -113,7 +155,7 @@ func main() {
 		return
 	}
 
-	relayAddr := tok.RelayURL
+	relayAddr := stripRelayScheme(tok.RelayURL)
 	if relayAddr == "" {
 		relayAddr = cfg.RelayAddr
 	}
@@ -131,7 +173,7 @@ func main() {
 	if cfg.RelayInsecure {
 		signalScheme = "http"
 	}
-	signalURL := signalScheme + "://" + relayHost(relayAddr) + "/signal"
+	signalURL := signalScheme + "://" + relayAddr + "/signal"
 	fallback := transport.NewWebRTC(signalURL, tok.DeviceToken)
 
 	interval := defaultDiscoveryInterval
@@ -205,14 +247,30 @@ func ensurePubkey(dataDir string) string {
 	return pubB64
 }
 
-// relayHost strips an optional port from a host:port string for use
-// when constructing the WebRTC signaling URL on a different port.
-// If no port is present, the input is returned unchanged.
-func relayHost(addr string) string {
-	if i := strings.LastIndex(addr, ":"); i > 0 && !strings.Contains(addr[i:], "]") {
-		return addr[:i]
+// stripRelayScheme removes grpc:// or grpcs:// scheme prefixes from a relay
+// URL so the result is a plain host:port suitable for gRPC dialing.
+func stripRelayScheme(addr string) string {
+	for _, prefix := range []string{"grpcs://", "grpc://"} {
+		if strings.HasPrefix(addr, prefix) {
+			return addr[len(prefix):]
+		}
 	}
 	return addr
+}
+
+// loadOrCreateDeviceID reads a persistent device UUID from dataDir/device_id,
+// generating and saving a new one on first run.
+func loadOrCreateDeviceID(dataDir string) string {
+	path := filepath.Join(dataDir, "device_id")
+	if b, err := os.ReadFile(path); err == nil {
+		id := strings.TrimSpace(string(b))
+		if id != "" {
+			return id
+		}
+	}
+	id := uuid.New().String()
+	_ = os.WriteFile(path, []byte(id), 0600)
+	return id
 }
 
 // loadCamerasFromEnv parses AGENT_CAMERAS of the form

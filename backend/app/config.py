@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     worker_api_key: str = "change-me-worker-secret"
 
     relay_public_url: str = "grpcs://relay.nightwatch.local:443"
+    relay_webrtc_url: str = "http://relay:9080"  # internal URL for backend→relay WebRTC proxy
 
     # Live MJPEG stream (worker-hosted). Public base URL of the worker's
     # stream server, and a shared HMAC secret used to sign short-lived

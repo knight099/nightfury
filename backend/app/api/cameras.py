@@ -2,6 +2,7 @@ import base64
 import secrets
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,8 @@ from app.schemas.camera import (
     LatestFrameResponse,
     StreamUrlResponse,
     UpdateCameraRequest,
+    WebRTCAnswerResponse,
+    WebRTCOfferRequest,
 )
 from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
 from app.services.stream_token import sign_stream_token
@@ -194,3 +197,47 @@ async def get_camera_stream_url(
     token, expires_at = sign_stream_token(str(camera_id))
     url = f"{settings.worker_stream_url}/stream/{camera_id}?token={token}"
     return StreamUrlResponse(url=url, expires_at=expires_at)
+
+
+@router.post("/{camera_id}/webrtc-offer", response_model=WebRTCAnswerResponse)
+async def camera_webrtc_offer(
+    camera_id: uuid.UUID,
+    body: WebRTCOfferRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Proxy a browser WebRTC offer to the relay viewer endpoint.
+
+    Returns an SDP answer when the camera is active on the relay (home-agent
+    path). Returns 404 when the camera is not currently streaming via the
+    relay (fall back to MJPEG on the client).
+    """
+    q = _camera_query(user).where(Camera.id == camera_id)
+    result = await db.execute(q)
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    view_token, _ = sign_stream_token(str(camera_id), ttl_seconds=300)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{settings.relay_webrtc_url}/view",
+                json={
+                    "camera_id": str(camera_id),
+                    "view_token": view_token,
+                    "offer": body.offer,
+                },
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Relay unreachable")
+
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Camera not on relay")
+    if resp.status_code == 401:
+        raise HTTPException(status_code=500, detail="Relay token validation failed")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Relay error")
+
+    data = resp.json()
+    return WebRTCAnswerResponse(answer=data["answer"])

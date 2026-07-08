@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Copy, Link2, Loader2, Router } from "lucide-react";
+import { ArrowRight, Check, Copy, Link2, Loader2, Router, Tv2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { AgentSummary, DiscoveredDevice, PairCodeResponse } from "@/types";
 
-type Step = "choice" | "pair" | "wait" | "register" | "done";
+type Step = "choice" | "pair" | "wait" | "register" | "claim" | "done";
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL ?? "https://relay.nightwatch.ai";
 
@@ -29,7 +29,12 @@ export default function ConnectCameraPage() {
         </Link>
       </div>
 
-      {step === "choice" && <ChoiceStep onAgentPath={() => setStep("pair")} />}
+      {step === "choice" && (
+        <ChoiceStep
+          onAgentPath={() => setStep("pair")}
+          onDevicePath={() => setStep("claim")}
+        />
+      )}
 
       {step === "pair" && (
         <PairStep
@@ -59,6 +64,15 @@ export default function ConnectCameraPage() {
           onDone={(cameraId) => {
             setCreatedCameraId(cameraId);
             setStep("done");
+          }}
+        />
+      )}
+
+      {step === "claim" && (
+        <ClaimStep
+          onDone={(agentId) => {
+            setAgentId(agentId);
+            setStep("register");
           }}
         />
       )}
@@ -94,13 +108,19 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ChoiceStep({ onAgentPath }: { onAgentPath: () => void }) {
+function ChoiceStep({
+  onAgentPath,
+  onDevicePath,
+}: {
+  onAgentPath: () => void;
+  onDevicePath: () => void;
+}) {
   return (
     <div className="mx-auto max-w-3xl">
       <p className="text-sm text-[#A3A3A3] mb-4">
         Pick how your camera reaches Nightwatch.
       </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link
           href="/cameras"
           className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-6 space-y-3 hover:border-[#1E90FF] transition-colors block"
@@ -109,23 +129,41 @@ function ChoiceStep({ onAgentPath }: { onAgentPath: () => void }) {
             <Link2 size={18} /> <span className="font-medium">Direct RTSP</span>
           </div>
           <p className="text-sm text-[#A3A3A3]">
-            Your camera or NVR has a public RTSP URL we can pull from. Best when you
-            already have port-forwarding or a static IP.
+            Your NVR has a public RTSP URL we can pull from. Best when you already
+            have port-forwarding or a static IP.
           </p>
           <div className="flex items-center gap-1 text-xs text-[#1E90FF]">
             Add directly <ArrowRight size={12} />
           </div>
         </Link>
         <button
+          onClick={onDevicePath}
+          className="bg-[#111111] border border-[#1E90FF]/40 rounded-lg p-6 space-y-3 hover:border-[#1E90FF] transition-colors text-left relative"
+        >
+          <div className="absolute -top-2.5 left-4 px-2 py-0.5 bg-[#1E90FF] text-white text-[10px] font-medium rounded-full">
+            Recommended
+          </div>
+          <div className="flex items-center gap-2 text-[#F5F5F5]">
+            <Tv2 size={18} /> <span className="font-medium">Nightwatch Device</span>
+          </div>
+          <p className="text-sm text-[#A3A3A3]">
+            Your device shows a code like <span className="font-mono text-[#F5F5F5]">NW-4829</span> on screen.
+            Enter it here to link it instantly — no configuration needed.
+          </p>
+          <div className="flex items-center gap-1 text-xs text-[#1E90FF]">
+            Enter code <ArrowRight size={12} />
+          </div>
+        </button>
+        <button
           onClick={onAgentPath}
           className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-6 space-y-3 hover:border-[#1E90FF] transition-colors text-left"
         >
           <div className="flex items-center gap-2 text-[#F5F5F5]">
-            <Router size={18} /> <span className="font-medium">Home NVR via Agent</span>
+            <Router size={18} /> <span className="font-medium">DIY Agent</span>
           </div>
           <p className="text-sm text-[#A3A3A3]">
-            Your camera lives behind a home router. Install the Nightwatch agent on a
-            NAS, Raspberry Pi, or OpenWRT device — no port-forwarding needed.
+            Install the agent yourself on a NAS, Pi, or OpenWRT — no port-forwarding
+            needed. You generate a code from here, paste it into the agent.
           </p>
           <div className="flex items-center gap-1 text-xs text-[#1E90FF]">
             Start pairing <ArrowRight size={12} />
@@ -571,6 +609,66 @@ function RegisterStep({
         </div>
       </div>
       )}
+    </Card>
+  );
+}
+
+function ClaimStep({ onDone }: { onDone: (agentId: string) => void }) {
+  const [code, setCode] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => api.claimDevice(code),
+    onSuccess: (data) => onDone(data.agent_id),
+    onError: (e: Error) => setErrorMsg(e.message || "Could not link device."),
+  });
+
+  const formatted = code
+    .toUpperCase()
+    .replace(/[^0-9NW-]/g, "")
+    .slice(0, 7);
+
+  return (
+    <Card>
+      <h2 className="text-base font-medium">Enter device code</h2>
+      <p className="text-sm text-[#A3A3A3]">
+        Your device displays a code like <span className="font-mono text-[#F5F5F5]">NW-4829</span> on its
+        screen or logs. Enter it below to link it to your account.
+      </p>
+      <div className="space-y-3">
+        <input
+          value={formatted}
+          onChange={(e) => setCode(e.target.value.replace(/[^0-9nwNW-]/g, ""))}
+          placeholder="NW-0000"
+          maxLength={7}
+          className="w-full px-4 py-3 bg-[#0D0D0D] border border-[#2A2A2A] rounded-lg font-mono text-2xl tracking-[0.4em] text-center text-[#F5F5F5] focus:outline-none focus:border-[#1E90FF] uppercase"
+        />
+        {errorMsg && (
+          <div className="text-xs text-red-400 bg-[#1A1A1A] border border-[#2A2A2A] rounded-md p-2">
+            {errorMsg}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={code.replace("NW-", "").replace("nw-", "").length < 4 || mutation.isPending}
+            className="px-4 py-2 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {mutation.isPending && <Loader2 size={14} className="animate-spin" />}
+            {mutation.isPending ? "Linking..." : "Link device"}
+          </button>
+          <Link
+            href="/cameras"
+            className="px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] text-[#A3A3A3] hover:text-[#F5F5F5] rounded-md text-sm transition-colors"
+          >
+            Cancel
+          </Link>
+        </div>
+      </div>
+      <div className="text-xs text-[#666666] border-t border-[#2A2A2A] pt-3">
+        The code is shown on your device&apos;s display or in its startup logs.
+        It expires after 10 minutes — restart the device to get a new one.
+      </div>
     </Card>
   );
 }

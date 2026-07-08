@@ -12,6 +12,7 @@ from app.models.agent_pair_code import AgentPairCode
 from app.models.digest import Digest
 from app.models.digest_preferences import DigestPreferences
 from app.models.chat_message import ChatMessage
+from app.models.device_provision import DeviceProvision
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "Digest",
     "DigestPreferences",
     "ChatMessage",
+    "DeviceProvision",
 ]

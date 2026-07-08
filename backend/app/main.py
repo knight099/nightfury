@@ -24,6 +24,7 @@ from app.api.test_camera import router as test_camera_router
 from app.api.agents import router as agents_router
 from app.api.digests import router as digests_router
 from app.api.chat import router as chat_router
+from app.api.devices import router as devices_router
 from app.ws.events import router as ws_router
 from app.services.digest.scheduler import (
     APSCHEDULER_AVAILABLE,
@@ -96,7 +97,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware
+# Middleware — order matters: last added = outermost (first to handle request/response).
+# CORSMiddleware must be outermost so CORS headers are present on ALL responses,
+# including errors thrown by inner middleware (rate limiter, etc.).
+app.add_middleware(TimingMiddleware)
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -104,9 +110,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(RateLimitMiddleware)
-app.add_middleware(RequestIDMiddleware)
-app.add_middleware(TimingMiddleware)
 
 # Routes
 app.include_router(auth_router)
@@ -121,6 +124,7 @@ app.include_router(test_camera_router)
 app.include_router(agents_router)
 app.include_router(digests_router)
 app.include_router(chat_router)
+app.include_router(devices_router)
 app.include_router(ws_router)
 
 

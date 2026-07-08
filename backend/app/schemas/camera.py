@@ -62,3 +62,11 @@ class LatestFrameResponse(BaseModel):
 class StreamUrlResponse(BaseModel):
     url: str
     expires_at: int
+
+
+class WebRTCOfferRequest(BaseModel):
+    offer: str
+
+
+class WebRTCAnswerResponse(BaseModel):
+    answer: str
