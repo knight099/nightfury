@@ -67,5 +67,5 @@ async def get_digest_service(
         gemini=gemini,
         spend_tracker=spend,
         notification=notification_service,
-        dashboard_base_url="https://app.nightwatch.ai",
+        dashboard_base_url=settings.dashboard_base_url,
     )

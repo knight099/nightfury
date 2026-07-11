@@ -98,7 +98,7 @@ async def _run_for_org(org_id, kind: str):
             gemini=gemini,
             spend_tracker=spend,
             notification=notification_service,
-            dashboard_base_url="https://app.nightwatch.ai",
+            dashboard_base_url=settings.dashboard_base_url,
         )
         try:
             await service.generate(org_id=org.id, kind=kind, start=start, end=end)

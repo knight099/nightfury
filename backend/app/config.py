@@ -41,6 +41,8 @@ class Settings(BaseSettings):
 
     worker_api_key: str = "change-me-worker-secret"
 
+    dashboard_base_url: str = "https://nightfury-beta.vercel.app"
+
     relay_public_url: str = "grpcs://relay.nightwatch.local:443"
     relay_webrtc_url: str = "http://relay:9080"  # internal URL for backend→relay WebRTC proxy
 
