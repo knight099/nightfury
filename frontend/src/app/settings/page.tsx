@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -25,6 +25,12 @@ export default function SettingsPage() {
     enabled: canViewTeam,
   });
 
+  const { data: sites } = useQuery({
+    queryKey: ["settings", "sites"],
+    queryFn: () => api.getSites(),
+    enabled: !!user?.org_id,
+  });
+
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-[#F5F5F5]">Settings</h1>
@@ -37,6 +43,13 @@ export default function SettingsPage() {
       )}
 
       {org && <OrgSection org={org} canEdit={isOwner} />}
+
+      {org && sites && isOwner && (
+        <SiteSection
+          sites={sites}
+          onMutate={() => queryClient.invalidateQueries({ queryKey: ["settings", "sites"] })}
+        />
+      )}
 
       {canViewTeam && team && (
         <TeamSection
@@ -89,6 +102,212 @@ function OrgSection({ org, canEdit }: { org: { id: string; name: string; slug: s
         </div>
       )}
     </div>
+  );
+}
+
+function SiteSection({
+  sites,
+  onMutate,
+}: {
+  sites: { id: string; org_id: string; name: string; address: string | null; timezone: string; created_at: string }[];
+  onMutate: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; address?: string; timezone?: string }) => api.createSite(data),
+    onSuccess: () => {
+      setErrorMsg(null);
+      setShowCreate(false);
+      queryClient.invalidateQueries({ queryKey: ["settings", "sites"] });
+      onMutate();
+    },
+    onError: (e: Error) => setErrorMsg(e.message || "Could not create site."),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; address?: string; timezone?: string } }) =>
+      api.updateSite(id, data),
+    onSuccess: () => {
+      setErrorMsg(null);
+      setEditingSiteId(null);
+      queryClient.invalidateQueries({ queryKey: ["settings", "sites"] });
+      onMutate();
+    },
+    onError: (e: Error) => setErrorMsg(e.message || "Could not update site."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteSite(id),
+    onSuccess: () => {
+      setErrorMsg(null);
+      queryClient.invalidateQueries({ queryKey: ["settings", "sites"] });
+      onMutate();
+    },
+    onError: (e: Error) => setErrorMsg(e.message || "Could not delete site."),
+  });
+
+  return (
+    <div className="p-4 bg-[#111111] border border-[#2A2A2A] rounded-lg space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-[#F5F5F5]">Sites</h2>
+          <p className="text-xs text-[#A3A3A3]">Create locations like Home, Office, or Warehouse to group cameras.</p>
+        </div>
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className="px-3 py-1.5 bg-[#1E90FF] text-white text-sm rounded-md hover:bg-[#3BA0FF] transition-colors"
+        >
+          {showCreate ? "Close" : "+ Create Site"}
+        </button>
+      </div>
+
+      {showCreate && (
+        <SiteEditor
+          mode="create"
+          onCancel={() => setShowCreate(false)}
+          onSave={(data) => createMutation.mutate(data)}
+          loading={createMutation.isPending}
+        />
+      )}
+
+      {errorMsg && (
+        <div className="text-xs text-red-400 bg-[#1A1A1A] border border-[#2A2A2A] rounded-md p-2">
+          {errorMsg}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {sites.length === 0 ? (
+          <div className="text-sm text-[#A3A3A3] border border-dashed border-[#2A2A2A] rounded-lg p-4">
+            No sites created yet. Add one so cameras can be organized by location.
+          </div>
+        ) : (
+          sites.map((site) => (
+            <div key={site.id} className="p-3 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A] space-y-3">
+              {editingSiteId === site.id ? (
+                <SiteEditor
+                  mode="edit"
+                  initialSite={site}
+                  onCancel={() => setEditingSiteId(null)}
+                  onSave={(data) => updateMutation.mutate({ id: site.id, data })}
+                  loading={updateMutation.isPending}
+                />
+              ) : (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-[#F5F5F5]">{site.name}</div>
+                    <div className="text-xs text-[#A3A3A3]">
+                      {site.address ? site.address : "No address set"} · {site.timezone} · Created {new Date(site.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setEditingSiteId(site.id)}
+                      className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#1E90FF] transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete site "${site.name}"? Cameras assigned to this site will also be affected.`)) {
+                          deleteMutation.mutate(site.id);
+                        }
+                      }}
+                      className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#EF4444] transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SiteEditor({
+  mode,
+  initialSite,
+  onSave,
+  onCancel,
+  loading,
+}: {
+  mode: "create" | "edit";
+  initialSite?: { name: string; address: string | null; timezone: string };
+  onSave: (data: { name: string; address?: string; timezone?: string }) => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const [name, setName] = useState(initialSite?.name ?? "");
+  const [address, setAddress] = useState(initialSite?.address ?? "");
+  const [timezone, setTimezone] = useState(initialSite?.timezone ?? "Asia/Kolkata");
+
+  useEffect(() => {
+    if (mode === "edit" && initialSite) {
+      setName(initialSite.name);
+      setAddress(initialSite.address ?? "");
+      setTimezone(initialSite.timezone);
+    }
+  }, [initialSite, mode]);
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave({
+          name,
+          address: address.trim() || undefined,
+          timezone: timezone.trim() || undefined,
+        });
+      }}
+      className="space-y-3"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Site name"
+          className="px-3 py-1.5 text-sm bg-[#1F1F1F] border border-[#2A2A2A] rounded text-[#F5F5F5] focus:outline-none focus:border-[#1E90FF]"
+          required
+        />
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="Address"
+          className="px-3 py-1.5 text-sm bg-[#1F1F1F] border border-[#2A2A2A] rounded text-[#F5F5F5] focus:outline-none focus:border-[#1E90FF]"
+        />
+        <input
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="Asia/Kolkata"
+          className="px-3 py-1.5 text-sm bg-[#1F1F1F] border border-[#2A2A2A] rounded text-[#F5F5F5] focus:outline-none focus:border-[#1E90FF]"
+          required
+        />
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="px-3 py-1.5 bg-[#1E90FF] text-white text-sm rounded hover:bg-[#3BA0FF] disabled:opacity-50"
+        >
+          {loading ? "Saving..." : mode === "create" ? "Create" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-3 py-1.5 text-sm text-[#666666] hover:text-[#F5F5F5]"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

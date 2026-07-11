@@ -173,6 +173,17 @@ class ApiClient {
     return this.request<Site>("/api/sites", { method: "POST", body: JSON.stringify(data) });
   }
 
+  async updateSite(id: string, data: { name?: string; address?: string; timezone?: string }) {
+    return this.request<Site>(`/api/sites/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSite(id: string) {
+    return this.request<void>(`/api/sites/${id}`, { method: "DELETE" });
+  }
+
   // Alert Rules
   async getAlertRules() {
     return this.request<AlertRule[]>("/api/alerts/rules");

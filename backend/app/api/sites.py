@@ -1,11 +1,12 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.models.camera import Camera
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.site import CreateSiteRequest, SiteResponse, UpdateSiteRequest
@@ -91,4 +92,12 @@ async def delete_site(
     site = result.scalar_one_or_none()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+    camera_count = (
+        await db.execute(select(func.count()).select_from(Camera).where(Camera.site_id == site_id))
+    ).scalar_one()
+    if camera_count:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a site that still has cameras",
+        )
     await db.delete(site)
