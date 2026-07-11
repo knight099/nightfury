@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -76,7 +77,7 @@ func main() {
 	// already in the environment.
 	backend := os.Getenv("BACKEND_URL")
 	if backend == "" {
-		backend = "https://api.nightwatch.local"
+		backend = "https://nightfury-backend.vercel.app"
 	}
 
 	if err := os.MkdirAll(cfg.StateDir, 0700); err != nil {
@@ -86,72 +87,94 @@ func main() {
 	s := store.New(tokenPath)
 
 	if !s.Exists() {
-		pairMode := os.Getenv("AGENT_PAIR_MODE")
-		mid := machineID()
-		pub := ensurePubkey(cfg.StateDir)
-
-		if pairMode == "localui" {
-			// Legacy: user opens a local web page and enters a code from the dashboard.
-			slog.Info("pairing via local UI", "ui_addr", cfg.LocalUIAddr)
-			adapter := &pairAdapter{
-				backend:   backend,
-				store:     s,
-				machineID: mid,
-				pubkey:    pub,
-				version:   agentVersion,
-			}
-			go func() {
-				if err := localui.Serve(cfg.LocalUIAddr, adapter); err != nil {
-					log.Printf("local UI server exited: %v", err)
-				}
-			}()
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-			for !s.Exists() {
-				select {
-				case <-ctx.Done():
-					slog.Info("agent shutting down before pairing completed")
-					return
-				case <-ticker.C:
-				}
-			}
-		} else {
-			// Default: device-initiated provisioning.
-			// Device generates NW-XXXX, registers with cloud, waits for customer to claim it.
-			deviceID := loadOrCreateDeviceID(cfg.StateDir)
-			code := devicepair.GenerateCode()
-			dc := devicepair.NewClient(backend)
-
-			displayCode, err := dc.Provision(ctx, deviceID, code, pub, mid, agentVersion)
-			if err != nil {
-				slog.Error("device provision failed", "err", err)
-				return
-			}
-			slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			slog.Info("DEVICE PAIRING CODE: "+displayCode, "action", "enter at nightwatch.ai → Cameras → Connect Device")
-			slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-			tok, err := dc.PollUntilClaimed(ctx, deviceID)
-			if err != nil {
-				slog.Error("provisioning failed", "err", err)
-				return
+		if cfg.DeviceToken != "" {
+			relayURL := os.Getenv("AGENT_RELAY_URL")
+			if relayURL == "" {
+				relayURL = cfg.RelayAddr
 			}
 			if err := s.Save(store.Token{
-				DeviceToken: tok.DeviceToken,
-				RelayURL:    tok.RelayURL,
-				OrgID:       tok.OrgID,
-				AgentID:     tok.AgentID,
+				DeviceToken: cfg.DeviceToken,
+				RelayURL:    relayURL,
+				OrgID:       cfg.OrgID,
+				AgentID:     cfg.AgentID,
 			}); err != nil {
-				slog.Error("failed to save device token", "err", err)
+				slog.Error("failed to save preconfigured device token", "err", err)
 				return
 			}
-			slog.Info("device claimed — starting tunnel", "agent_id", tok.AgentID)
+			slog.Info("using preconfigured agent token; skipping pairing")
+		} else {
+			pairMode := os.Getenv("AGENT_PAIR_MODE")
+			mid := machineID()
+			pub := ensurePubkey(cfg.StateDir)
+
+			if pairMode == "localui" {
+				// Legacy: user opens a local web page and enters a code from the dashboard.
+				slog.Info("pairing via local UI", "ui_addr", cfg.LocalUIAddr)
+				adapter := &pairAdapter{
+					backend:   backend,
+					store:     s,
+					machineID: mid,
+					pubkey:    pub,
+					version:   agentVersion,
+				}
+				go func() {
+					if err := localui.Serve(cfg.LocalUIAddr, adapter); err != nil {
+						log.Printf("local UI server exited: %v", err)
+					}
+				}()
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				for !s.Exists() {
+					select {
+					case <-ctx.Done():
+						slog.Info("agent shutting down before pairing completed")
+						return
+					case <-ticker.C:
+					}
+				}
+			} else {
+				// Default: device-initiated provisioning.
+				// Device generates NW-XXXX, registers with cloud, waits for customer to claim it.
+				deviceID := loadOrCreateDeviceID(cfg.StateDir)
+				code := devicepair.GenerateCode()
+				dc := devicepair.NewClient(backend)
+
+				displayCode, err := dc.Provision(ctx, deviceID, code, pub, mid, agentVersion)
+				if err != nil {
+					slog.Error("device provision failed", "err", err)
+					return
+				}
+				slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+				slog.Info("DEVICE PAIRING CODE: "+displayCode, "action", "enter at nightwatch.ai → Cameras → Connect Device")
+				slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+				tok, err := dc.PollUntilClaimed(ctx, deviceID)
+				if err != nil {
+					slog.Error("provisioning failed", "err", err)
+					return
+				}
+				if err := s.Save(store.Token{
+					DeviceToken: tok.DeviceToken,
+					RelayURL:    tok.RelayURL,
+					OrgID:       tok.OrgID,
+					AgentID:     tok.AgentID,
+				}); err != nil {
+					slog.Error("failed to save device token", "err", err)
+					return
+				}
+				slog.Info("device claimed — starting tunnel", "agent_id", tok.AgentID)
+			}
 		}
 	}
 
 	tok, err := s.Load()
 	if err != nil {
 		slog.Error("failed to load token after pairing", "err", err)
+		return
+	}
+
+	if err := validateConfiguredIdentity(tok, cfg); err != nil {
+		slog.Error("agent identity mismatch", "err", err)
 		return
 	}
 
@@ -201,6 +224,16 @@ func main() {
 		slog.Error("supervisor exited", "err", err)
 	}
 	slog.Info("agent shutting down")
+}
+
+func validateConfiguredIdentity(tok store.Token, cfg config.Config) error {
+	if cfg.OrgID != "" && tok.OrgID != "" && cfg.OrgID != tok.OrgID {
+		return fmt.Errorf("token org_id %s does not match configured AGENT_ORG_ID %s", tok.OrgID, cfg.OrgID)
+	}
+	if cfg.AgentID != "" && tok.AgentID != "" && cfg.AgentID != tok.AgentID {
+		return fmt.Errorf("token agent_id %s does not match configured AGENT_ID %s", tok.AgentID, cfg.AgentID)
+	}
+	return nil
 }
 
 // machineID returns /etc/machine-id if readable, otherwise a hex digest of

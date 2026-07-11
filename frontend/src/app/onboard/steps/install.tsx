@@ -1,12 +1,21 @@
 "use client";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
 
 export function InstallStep({ onNext }: { onNext: () => void }) {
   const cmd = `docker run -d --name nightwatch-agent --restart=always \\
   --net=host \\
   -v nightwatch-agent-data:/var/lib/nightwatch-agent \\
   -e BACKEND_URL=${BACKEND_URL} \\
+  ghcr.io/nightwatch/agent:latest`;
+
+  const preconfiguredCmd = `docker run -d --name nightwatch-agent --restart=always \\
+  --net=host \\
+  -v nightwatch-agent-data:/var/lib/nightwatch-agent \\
+  -e BACKEND_URL=${BACKEND_URL} \\
+  -e AGENT_DEVICE_TOKEN=<token> \\
+  -e AGENT_ORG_ID=<org-id> \\
+  -e AGENT_ID=<agent-id> \\
   ghcr.io/nightwatch/agent:latest`;
 
   return (
@@ -28,6 +37,14 @@ export function InstallStep({ onNext }: { onNext: () => void }) {
       <p className="text-sm text-[#A3A3A3]">
         Once running, open <code className="bg-[#1a1a1a] px-1 rounded">http://&lt;device-ip&gt;:8765</code> in your browser.
       </p>
+      <div className="space-y-2">
+        <p className="text-sm text-[#A3A3A3]">
+          If you already have a pre-issued device token, use this no-pairing form instead:
+        </p>
+        <pre className="bg-[#0a0a0a] border border-[#2A2A2A] p-4 rounded overflow-x-auto text-sm">
+          {preconfiguredCmd}
+        </pre>
+      </div>
       <div>
         <button
           onClick={onNext}

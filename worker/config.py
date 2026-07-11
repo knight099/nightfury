@@ -5,7 +5,7 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Backend API
-    backend_url: str = "http://localhost:8080"
+    backend_url: str = "https://nightfury-backend.vercel.app"
     worker_api_key: str = "change-me-worker-secret"
 
     # GCS

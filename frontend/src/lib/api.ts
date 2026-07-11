@@ -17,7 +17,7 @@ import type {
   User,
 } from "@/types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
 
 type CreateCameraRequest = {
   name: string;

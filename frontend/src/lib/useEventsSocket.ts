@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/store";
 import type { Event } from "@/types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
 
 function buildWsUrl(token: string): string {
   const wsBase = BASE_URL.replace(/^http/i, (m) => (m.toLowerCase() === "https" ? "wss" : "ws"));

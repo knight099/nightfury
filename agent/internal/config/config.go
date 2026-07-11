@@ -11,6 +11,9 @@ type Config struct {
 	RelayAddr      string
 	RelayInsecure  bool
 	StaticAgentKey string
+	DeviceToken    string
+	OrgID          string
+	AgentID        string
 	LocalUIAddr    string
 	StateDir       string
 }
@@ -24,6 +27,9 @@ func Load() Config {
 		RelayAddr:      envOr("AGENT_RELAY_ADDR", "relay.nightwatch.ai:9443"),
 		RelayInsecure:  os.Getenv("AGENT_RELAY_INSECURE") == "1",
 		StaticAgentKey: os.Getenv("AGENT_KEY"),
+		DeviceToken:    os.Getenv("AGENT_DEVICE_TOKEN"),
+		OrgID:          os.Getenv("AGENT_ORG_ID"),
+		AgentID:        os.Getenv("AGENT_ID"),
 		LocalUIAddr:    envOr("AGENT_UI_ADDR", ":8765"),
 		StateDir:       envOr("AGENT_STATE_DIR", "/var/lib/nightwatch-agent"),
 	}
