@@ -8,7 +8,7 @@ import { ArrowRight, Check, Copy, Link2, Loader2, Router, Tv2 } from "lucide-rea
 import { api } from "@/lib/api";
 import type { AgentSummary, DiscoveredDevice, PairCodeResponse } from "@/types";
 
-type Step = "choice" | "pair" | "wait" | "register" | "claim" | "done";
+type Step = "choice" | "direct" | "pair" | "wait" | "register" | "claim" | "done";
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL ?? "https://relay.nightwatch.ai";
 
@@ -31,8 +31,18 @@ export default function ConnectCameraPage() {
 
       {step === "choice" && (
         <ChoiceStep
+          onDirectPath={() => setStep("direct")}
           onAgentPath={() => setStep("pair")}
           onDevicePath={() => setStep("claim")}
+        />
+      )}
+
+      {step === "direct" && (
+        <DirectRtspStep
+          onDone={(cameraId) => {
+            setCreatedCameraId(cameraId);
+            setStep("done");
+          }}
         />
       )}
 
@@ -109,9 +119,11 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 function ChoiceStep({
+  onDirectPath,
   onAgentPath,
   onDevicePath,
 }: {
+  onDirectPath: () => void;
   onAgentPath: () => void;
   onDevicePath: () => void;
 }) {
@@ -121,8 +133,8 @@ function ChoiceStep({
         Pick how your camera reaches Nightwatch.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link
-          href="/cameras"
+        <button
+          onClick={onDirectPath}
           className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-6 space-y-3 hover:border-[#1E90FF] transition-colors block"
         >
           <div className="flex items-center gap-2 text-[#F5F5F5]">
@@ -135,7 +147,7 @@ function ChoiceStep({
           <div className="flex items-center gap-1 text-xs text-[#1E90FF]">
             Add directly <ArrowRight size={12} />
           </div>
-        </Link>
+        </button>
         <button
           onClick={onDevicePath}
           className="bg-[#111111] border border-[#1E90FF]/40 rounded-lg p-6 space-y-3 hover:border-[#1E90FF] transition-colors text-left relative"
@@ -171,6 +183,117 @@ function ChoiceStep({
         </button>
       </div>
     </div>
+  );
+}
+
+function DirectRtspStep({ onDone }: { onDone: (cameraId: string) => void }) {
+  const { data: sites } = useQuery({
+    queryKey: ["sites"],
+    queryFn: () => api.getSites(),
+  });
+
+  const [name, setName] = useState("");
+  const [siteId, setSiteId] = useState("");
+  const [rtspUrl, setRtspUrl] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!siteId && sites && sites.length > 0) {
+      setSiteId(sites[0].id);
+    }
+  }, [sites, siteId]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.createCamera({
+        name,
+        site_id: siteId,
+        ingest_mode: "rtsp_pull",
+        rtsp_url: rtspUrl,
+        enabled_events: ["person", "vehicle", "intrusion"],
+        sensitivity: "medium",
+      }),
+    onSuccess: (data) => onDone(data.camera.id),
+    onError: (e: Error) => setErrorMsg(e.message || "Could not add RTSP camera."),
+  });
+
+  const disabled = !name || !siteId || !rtspUrl || mutation.isPending;
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-medium">Add direct RTSP camera</h2>
+        <ProgressIndicator current={1} />
+      </div>
+      <p className="text-sm text-[#A3A3A3]">
+        Use this when your NVR or camera is reachable from the cloud by a public RTSP URL.
+      </p>
+
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <label className="text-xs text-[#A3A3A3]">Camera name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Front door"
+            className="w-full px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-[#A3A3A3]">Site</label>
+          <select
+            value={siteId}
+            onChange={(e) => setSiteId(e.target.value)}
+            className="w-full px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none"
+          >
+            {(sites || []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+            {(!sites || sites.length === 0) && (
+              <option value="">No sites available</option>
+            )}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-[#A3A3A3]">RTSP URL</label>
+          <input
+            value={rtspUrl}
+            onChange={(e) => setRtspUrl(e.target.value)}
+            placeholder="rtsp://user:pass@ip:554/stream"
+            className="w-full px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm focus:border-[#1E90FF] outline-none font-mono"
+          />
+          <div className="text-xs text-[#666666]">
+            This should be reachable from the worker or the deployed backend path that pulls it.
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div className="text-xs text-red-400 bg-[#1A1A1A] border border-[#2A2A2A] rounded-md p-2">
+            {errorMsg}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={disabled}
+            className="px-3 py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] transition-colors disabled:opacity-50"
+          >
+            {mutation.isPending ? "Adding..." : "Add camera"}
+          </button>
+          <button
+            onClick={() => window.history.back()}
+            className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] text-[#A3A3A3] hover:text-[#F5F5F5] rounded-md text-sm transition-colors"
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }
 

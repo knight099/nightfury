@@ -19,6 +19,19 @@ import type {
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+type CreateCameraRequest = {
+  name: string;
+  site_id: string;
+  ingest_mode: "rtsp_pull" | "rtmp_push" | "srt_push";
+  rtsp_url?: string;
+  stream_key?: string;
+  enabled_events?: string[];
+  detection_zones?: Array<Record<string, unknown>>;
+  sensitivity?: "low" | "medium" | "high";
+  idle_fps?: number;
+  active_fps?: number;
+};
+
 class ApiClient {
   private token: string | null = null;
 
@@ -85,7 +98,7 @@ class ApiClient {
     return this.request<Camera[]>(`/api/cameras${qs}`);
   }
 
-  async createCamera(data: Partial<Camera> & { name: string; site_id: string; ingest_mode: string }) {
+  async createCamera(data: CreateCameraRequest) {
     return this.request<{ camera: Camera; ingest_endpoint?: string; stream_key?: string }>("/api/cameras", {
       method: "POST",
       body: JSON.stringify(data),
