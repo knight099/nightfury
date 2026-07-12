@@ -43,6 +43,13 @@ class Settings(BaseSettings):
 
     dashboard_base_url: str = "https://nightfury-beta.vercel.app"
 
+    # Public GitHub Release (or CDN) prefix containing the cross-compiled
+    # agent files. Account-bound installer scripts fetch the platform binary
+    # from here and never contain a permanent device credential.
+    agent_release_base_url: str = (
+        "https://github.com/knight099/nightfury/releases/latest/download"
+    )
+
     relay_public_url: str = "grpcs://relay.nightwatch.local:443"
     relay_webrtc_url: str = "http://relay:9080"  # internal URL for backend→relay WebRTC proxy
 

@@ -102,6 +102,21 @@ func main() {
 				return
 			}
 			slog.Info("using preconfigured agent token; skipping pairing")
+		} else if cfg.PairCode != "" {
+			// The account-bound installer supplies a short-lived, one-time pair
+			// code. The agent still creates its own keypair and receives a device
+			// token only after redeeming the code, so no long-lived credential is
+			// embedded in a downloaded file.
+			mid := machineID()
+			pub := ensurePubkey(cfg.StateDir)
+			adapter := &pairAdapter{
+				backend: backend, store: s, machineID: mid, pubkey: pub, version: agentVersion,
+			}
+			if err := adapter.Pair(ctx, cfg.PairCode); err != nil {
+				slog.Error("automatic installer pairing failed", "err", err)
+				return
+			}
+			slog.Info("installer pairing complete; starting tunnel")
 		} else {
 			pairMode := os.Getenv("AGENT_PAIR_MODE")
 			mid := machineID()

@@ -12,6 +12,7 @@ type Config struct {
 	RelayInsecure  bool
 	StaticAgentKey string
 	DeviceToken    string
+	PairCode       string
 	OrgID          string
 	AgentID        string
 	LocalUIAddr    string
@@ -28,6 +29,10 @@ func Load() Config {
 		RelayInsecure:  os.Getenv("AGENT_RELAY_INSECURE") == "1",
 		StaticAgentKey: os.Getenv("AGENT_KEY"),
 		DeviceToken:    os.Getenv("AGENT_DEVICE_TOKEN"),
+		// PairCode is a short-lived, single-use code written by the downloaded
+		// installer. It lets first start happen without asking the customer to
+		// copy a pairing code into a local UI.
+		PairCode:       os.Getenv("AGENT_PAIR_CODE"),
 		OrgID:          os.Getenv("AGENT_ORG_ID"),
 		AgentID:        os.Getenv("AGENT_ID"),
 		LocalUIAddr:    envOr("AGENT_UI_ADDR", ":8765"),

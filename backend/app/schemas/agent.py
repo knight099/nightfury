@@ -21,6 +21,22 @@ class PairCodeResponse(BaseModel):
     expires_at: datetime
 
 
+class InstallerRequest(BaseModel):
+    """Create a one-click installer for a specific desktop/edge platform."""
+
+    platform: str = Field(
+        ...,
+        pattern=r"^(linux-amd64|linux-arm64|darwin-amd64|darwin-arm64|windows-amd64)$",
+    )
+    org_id: uuid.UUID | None = None
+
+
+class InstallerResponse(BaseModel):
+    filename: str
+    content: str
+    expires_at: datetime
+
+
 class PairRequest(BaseModel):
     code: str = Field(..., pattern=r"^\d{6}$")
     machine_id: str = Field(..., min_length=8, max_length=128)
