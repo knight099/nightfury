@@ -28,7 +28,9 @@ router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(
 
 @router.post("/events", response_model=dict, status_code=201)
 async def ingest_event(body: CreateEventRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Camera).where(Camera.id == body.camera_id))
+    result = await db.execute(
+        select(Camera).where(Camera.id == body.camera_id, Camera.deleted_at.is_(None))
+    )
     camera = result.scalar_one_or_none()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
@@ -81,7 +83,11 @@ async def list_assignments(
     stmt = (
         select(Camera, Organization.timezone)
         .join(Organization, Camera.org_id == Organization.id)
-        .where(Camera.ingest_mode.in_(["rtsp_pull", "rtmp_push"]))
+        .where(
+            Camera.ingest_mode.in_(["rtsp_pull", "rtmp_push"]),
+            Camera.deleted_at.is_(None),
+            Organization.deleted_at.is_(None),
+        )
     )
     result = await db.execute(stmt)
     rows = result.all()
@@ -112,7 +118,9 @@ async def worker_heartbeat(body: dict, db: AsyncSession = Depends(get_db)):
     if not camera_id:
         return {"status": "ok"}
 
-    result = await db.execute(select(Camera).where(Camera.id == uuid.UUID(camera_id)))
+    result = await db.execute(
+        select(Camera).where(Camera.id == uuid.UUID(camera_id), Camera.deleted_at.is_(None))
+    )
     camera = result.scalar_one_or_none()
     if camera:
         camera.status = body.get("status", "online")

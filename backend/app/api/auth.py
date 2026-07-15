@@ -41,7 +41,9 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         )
 
     # Find user
-    result = await db.execute(select(User).where(User.username == body.username))
+    result = await db.execute(
+        select(User).where(User.username == body.username, User.deleted_at.is_(None))
+    )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.password_hash):

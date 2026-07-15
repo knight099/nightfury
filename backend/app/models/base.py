@@ -19,5 +19,9 @@ class TimestampMixin:
     )
 
 
+class SoftDeleteMixin:
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def generate_uuid():
     return uuid.uuid4()

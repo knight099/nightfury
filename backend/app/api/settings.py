@@ -20,6 +20,7 @@ from app.schemas.whatsapp_alerts import (
     UpdateWhatsAppAlertContactRequest,
     WhatsAppAlertContact,
 )
+from app.services.soft_delete_service import soft_delete_service
 from app.services.whatsapp_alert_service import whatsapp_alert_service
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -33,7 +34,9 @@ async def get_my_org(
     """Get current user's organization details."""
     if not user.org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
-    result = await db.execute(select(Organization).where(Organization.id == user.org_id))
+    result = await db.execute(
+        select(Organization).where(Organization.id == user.org_id, Organization.deleted_at.is_(None))
+    )
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -51,7 +54,9 @@ async def update_my_org(
     if not user.org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
 
-    result = await db.execute(select(Organization).where(Organization.id == user.org_id))
+    result = await db.execute(
+        select(Organization).where(Organization.id == user.org_id, Organization.deleted_at.is_(None))
+    )
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -71,7 +76,7 @@ async def list_team(
     if not user.org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
 
-    q = select(User).where(User.org_id == user.org_id)
+    q = select(User).where(User.org_id == user.org_id, User.deleted_at.is_(None))
     if user.role == "viewer":
         q = q.where(User.role == "viewer")
     result = await db.execute(q.order_by(User.created_at.desc()))
@@ -89,7 +94,7 @@ async def update_team_member(
     require_role(user, "owner")
 
     result = await db.execute(
-        select(User).where(User.id == user_id, User.org_id == user.org_id)
+        select(User).where(User.id == user_id, User.org_id == user.org_id, User.deleted_at.is_(None))
     )
     target = result.scalar_one_or_none()
     if not target:
@@ -118,7 +123,7 @@ async def remove_team_member(
     require_role(user, "owner")
 
     result = await db.execute(
-        select(User).where(User.id == user_id, User.org_id == user.org_id)
+        select(User).where(User.id == user_id, User.org_id == user.org_id, User.deleted_at.is_(None))
     )
     target = result.scalar_one_or_none()
     if not target:
@@ -131,7 +136,7 @@ async def remove_team_member(
         raise HTTPException(status_code=400, detail="Cannot remove another owner")
 
     await session_manager.revoke_all_user_sessions(str(target.id))
-    await db.delete(target)
+    await soft_delete_service.delete_user(target, db)
 
 
 @router.post("/team/{user_id}/reset-password", status_code=200)
@@ -149,7 +154,7 @@ async def reset_team_member_password(
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     result = await db.execute(
-        select(User).where(User.id == user_id, User.org_id == user.org_id)
+        select(User).where(User.id == user_id, User.org_id == user.org_id, User.deleted_at.is_(None))
     )
     target = result.scalar_one_or_none()
     if not target:
@@ -269,7 +274,9 @@ async def org_ai_usage(
 async def _get_org_or_404(db: AsyncSession, user: User) -> Organization:
     if not user.org_id:
         raise HTTPException(status_code=400, detail="No organization associated")
-    result = await db.execute(select(Organization).where(Organization.id == user.org_id))
+    result = await db.execute(
+        select(Organization).where(Organization.id == user.org_id, Organization.deleted_at.is_(None))
+    )
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")

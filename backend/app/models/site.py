@@ -4,10 +4,10 @@ from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 
-class Site(Base, TimestampMixin):
+class Site(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "sites"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -17,4 +17,4 @@ class Site(Base, TimestampMixin):
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata")
 
     organization = relationship("Organization", back_populates="sites")
-    cameras = relationship("Camera", back_populates="site", cascade="all, delete-orphan")
+    cameras = relationship("Camera", back_populates="site")

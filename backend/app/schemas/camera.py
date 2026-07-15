@@ -43,6 +43,7 @@ class CameraResponse(BaseModel):
     idle_fps: float
     active_fps: float
     created_at: datetime
+    deleted_at: datetime | None = None
 
     class Config:
         from_attributes = True

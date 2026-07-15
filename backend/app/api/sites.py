@@ -10,6 +10,7 @@ from app.models.camera import Camera
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.site import CreateSiteRequest, SiteResponse, UpdateSiteRequest
+from app.services.soft_delete_service import soft_delete_service
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
 
@@ -20,7 +21,7 @@ async def list_sites(
     user: User = Depends(get_current_user),
     org_id: uuid.UUID | None = Query(None),
 ):
-    q = select(Site)
+    q = select(Site).where(Site.deleted_at.is_(None))
     if user.role == "super_admin":
         if org_id:
             q = q.where(Site.org_id == org_id)
@@ -61,7 +62,7 @@ async def update_site(
 ):
     require_role(user, "admin")
 
-    q = select(Site).where(Site.id == site_id)
+    q = select(Site).where(Site.id == site_id, Site.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(Site.org_id == user.org_id)
 
@@ -84,7 +85,7 @@ async def delete_site(
 ):
     require_role(user, "admin")
 
-    q = select(Site).where(Site.id == site_id)
+    q = select(Site).where(Site.id == site_id, Site.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(Site.org_id == user.org_id)
 
@@ -93,11 +94,37 @@ async def delete_site(
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
     camera_count = (
-        await db.execute(select(func.count()).select_from(Camera).where(Camera.site_id == site_id))
+        await db.execute(
+            select(func.count())
+            .select_from(Camera)
+            .where(Camera.site_id == site_id, Camera.deleted_at.is_(None))
+        )
     ).scalar_one()
     if camera_count:
         raise HTTPException(
             status_code=400,
             detail="Cannot delete a site that still has cameras",
         )
-    await db.delete(site)
+    await soft_delete_service.delete_site(site, db)
+
+
+@router.post("/{site_id}/restore", response_model=SiteResponse)
+async def restore_site(
+    site_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "admin")
+
+    q = select(Site).where(Site.id == site_id)
+    if user.role != "super_admin":
+        q = q.where(Site.org_id == user.org_id)
+
+    result = await db.execute(q)
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if site.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Site is not deleted")
+    await soft_delete_service.restore_site(site, db)
+    return SiteResponse.model_validate(site)

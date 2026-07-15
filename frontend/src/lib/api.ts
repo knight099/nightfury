@@ -265,13 +265,14 @@ class ApiClient {
   }
 
   // Admin
-  async adminGetOrgs() {
-    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string }[]>("/api/admin/orgs");
+  async adminGetOrgs(includeDeleted = false) {
+    const qs = includeDeleted ? "?include_deleted=true" : "";
+    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }[]>(`/api/admin/orgs${qs}`);
   }
 
-  async adminGetUsers(params?: { org_id?: string; role?: string }) {
+  async adminGetUsers(params?: { org_id?: string; role?: string; include_deleted?: boolean }) {
     const qs = new URLSearchParams(
-      Object.entries(params || {}).filter(([, v]) => v !== undefined) as [string, string][]
+      Object.entries(params || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
     ).toString();
     return this.request<User[]>(`/api/admin/users${qs ? `?${qs}` : ""}`);
   }
@@ -313,6 +314,10 @@ class ApiClient {
     return this.request<void>(`/api/admin/users/${userId}`, { method: "DELETE" });
   }
 
+  async adminRestoreUser(userId: string) {
+    return this.request<User>(`/api/admin/users/${userId}/restore`, { method: "POST" });
+  }
+
   async adminCreateOrg(data: { name: string; plan?: string }) {
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string }>("/api/admin/orgs", {
       method: "POST",
@@ -329,6 +334,10 @@ class ApiClient {
 
   async adminDeleteOrg(orgId: string) {
     return this.request<void>(`/api/admin/orgs/${orgId}`, { method: "DELETE" });
+  }
+
+  async adminRestoreOrg(orgId: string) {
+    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }>(`/api/admin/orgs/${orgId}/restore`, { method: "POST" });
   }
 
   // Digests

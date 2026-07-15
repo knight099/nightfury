@@ -69,7 +69,11 @@ async def create_pair_code(
                 detail="super_admin must pass org_id in the request body",
             )
         org = (
-            await db.execute(select(Organization).where(Organization.id == payload.org_id))
+            await db.execute(
+                select(Organization).where(
+                    Organization.id == payload.org_id, Organization.deleted_at.is_(None)
+                )
+            )
         ).scalar_one_or_none()
         if org is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="org not found")
@@ -257,7 +261,10 @@ async def _enqueue_resolve_job(agent_id: uuid.UUID, job: ResolveJob) -> None:
 
 async def _default_site(org_id: uuid.UUID, db: AsyncSession) -> Site:
     stmt = (
-        select(Site).where(Site.org_id == org_id).order_by(Site.created_at).limit(1)
+        select(Site)
+        .where(Site.org_id == org_id, Site.deleted_at.is_(None))
+        .order_by(Site.created_at)
+        .limit(1)
     )
     site = (await db.execute(stmt)).scalar_one_or_none()
     if site is None:
@@ -282,7 +289,7 @@ async def register_camera(
 
     if payload.site_id is not None:
         site_stmt = select(Site).where(
-            Site.id == payload.site_id, Site.org_id == agent.org_id
+            Site.id == payload.site_id, Site.org_id == agent.org_id, Site.deleted_at.is_(None)
         )
         site = (await db.execute(site_stmt)).scalar_one_or_none()
         if site is None:
@@ -362,7 +369,9 @@ async def post_resolve_result(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Agent reports the resolved RTSP URL (or an error) for a camera."""
-    stmt = select(Camera).where(Camera.id == camera_id, Camera.agent_id == agent.id)
+    stmt = select(Camera).where(
+        Camera.id == camera_id, Camera.agent_id == agent.id, Camera.deleted_at.is_(None)
+    )
     camera = (await db.execute(stmt)).scalar_one_or_none()
     if camera is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="camera not found")

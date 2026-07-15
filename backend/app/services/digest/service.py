@@ -57,7 +57,7 @@ class DigestService:
     ) -> Digest:
         org = (
             await self.db.execute(
-                select(Organization).where(Organization.id == org_id)
+                select(Organization).where(Organization.id == org_id, Organization.deleted_at.is_(None))
             )
         ).scalar_one()
 

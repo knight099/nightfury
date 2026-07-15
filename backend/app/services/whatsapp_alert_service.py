@@ -78,7 +78,11 @@ class WhatsAppAlertService:
         enabled_numbers = [c["number"] for c in org.whatsapp_alert_contacts if c["enabled"]]
 
         result = await db.execute(
-            select(AlertRule).where(AlertRule.org_id == org.id, AlertRule.name == WHATSAPP_RULE_NAME)
+            select(AlertRule).where(
+                AlertRule.org_id == org.id,
+                AlertRule.name == WHATSAPP_RULE_NAME,
+                AlertRule.deleted_at.is_(None),
+            )
         )
         rule = result.scalar_one_or_none()
 

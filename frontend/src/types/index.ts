@@ -6,6 +6,7 @@ export interface User {
   org_id: string | null;
   is_active: boolean;
   must_change_password: boolean;
+  deleted_at?: string | null;
 }
 
 export interface Organization {

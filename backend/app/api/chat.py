@@ -79,7 +79,7 @@ def _resolve_scope_org(current: User, body_org_id: uuid.UUID | None) -> uuid.UUI
 async def _validate_camera(
     db: AsyncSession, camera_id: uuid.UUID, scope_org_id: uuid.UUID | None, current: User
 ) -> Camera:
-    stmt = select(Camera).where(Camera.id == camera_id)
+    stmt = select(Camera).where(Camera.id == camera_id, Camera.deleted_at.is_(None))
     if current.role != "super_admin":
         stmt = stmt.where(Camera.org_id == scope_org_id)
     elif scope_org_id is not None:
