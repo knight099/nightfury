@@ -19,10 +19,11 @@ const TABS: { id: SettingsTab; label: string }[] = [
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const isOwner = user?.role === "owner";
   const isSuperAdmin = user?.role === "super_admin";
+  const isOwner = user?.role === "owner" || isSuperAdmin;
   const canViewTeam = !!user?.org_id;
   const [activeTab, setActiveTab] = useState<SettingsTab>("organization");
+  const [showDeletedSites, setShowDeletedSites] = useState(false);
 
   const { data: org } = useQuery({
     queryKey: ["settings", "org"],
@@ -37,8 +38,8 @@ export default function SettingsPage() {
   });
 
   const { data: sites } = useQuery({
-    queryKey: ["settings", "sites"],
-    queryFn: () => api.getSites(),
+    queryKey: ["settings", "sites", showDeletedSites],
+    queryFn: () => api.getSites({ include_deleted: showDeletedSites }),
     enabled: !!user?.org_id,
   });
 
@@ -76,6 +77,9 @@ export default function SettingsPage() {
           {activeTab === "sites" && org && sites && isOwner && (
             <SiteSection
               sites={sites}
+              isSuperAdmin={isSuperAdmin}
+              showDeleted={showDeletedSites}
+              onToggleShowDeleted={setShowDeletedSites}
               onMutate={() => queryClient.invalidateQueries({ queryKey: ["settings", "sites"] })}
             />
           )}
@@ -140,9 +144,15 @@ function OrgSection({ org, canEdit }: { org: { id: string; name: string; slug: s
 
 function SiteSection({
   sites,
+  isSuperAdmin,
+  showDeleted,
+  onToggleShowDeleted,
   onMutate,
 }: {
-  sites: { id: string; org_id: string; name: string; address: string | null; timezone: string; created_at: string }[];
+  sites: { id: string; org_id: string; name: string; address: string | null; timezone: string; created_at: string; deleted_at?: string | null }[];
+  isSuperAdmin: boolean;
+  showDeleted: boolean;
+  onToggleShowDeleted: (v: boolean) => void;
   onMutate: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -183,12 +193,33 @@ function SiteSection({
     onError: (e: Error) => setErrorMsg(e.message || "Could not delete site."),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.restoreSite(id),
+    onSuccess: () => {
+      setErrorMsg(null);
+      queryClient.invalidateQueries({ queryKey: ["settings", "sites"] });
+      onMutate();
+    },
+    onError: (e: Error) => setErrorMsg(e.message || "Could not restore site."),
+  });
+
   return (
     <div className="p-4 bg-[#111111] border border-[#2A2A2A] rounded-lg space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#F5F5F5]">Sites</h2>
           <p className="text-xs text-[#A3A3A3]">Create locations like Home, Office, or Warehouse to group cameras.</p>
+          {isSuperAdmin && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-[#A3A3A3]">
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={(e) => onToggleShowDeleted(e.target.checked)}
+                className="rounded"
+              />
+              Show deleted
+            </label>
+          )}
         </div>
         <button
           onClick={() => setShowCreate((v) => !v)}
@@ -232,28 +263,44 @@ function SiteSection({
               ) : (
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="text-sm font-medium text-[#F5F5F5]">{site.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-[#F5F5F5]">{site.name}</span>
+                      {site.deleted_at && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">deleted</span>
+                      )}
+                    </div>
                     <div className="text-xs text-[#A3A3A3]">
                       {site.address ? site.address : "No address set"} · {site.timezone} · Created {new Date(site.created_at).toLocaleDateString()}
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => setEditingSiteId(site.id)}
-                      className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#1E90FF] transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete site "${site.name}"? Cameras assigned to this site will also be affected.`)) {
-                          deleteMutation.mutate(site.id);
-                        }
-                      }}
-                      className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#EF4444] transition-colors"
-                    >
-                      Delete
-                    </button>
+                    {site.deleted_at ? (
+                      <button
+                        onClick={() => restoreMutation.mutate(site.id)}
+                        className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#4ADE80] transition-colors"
+                      >
+                        Restore
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setEditingSiteId(site.id)}
+                          className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#1E90FF] transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete site "${site.name}"? Cameras assigned to this site will also be affected.`)) {
+                              deleteMutation.mutate(site.id);
+                            }
+                          }}
+                          className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#EF4444] transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

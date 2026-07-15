@@ -94,9 +94,11 @@ class ApiClient {
   }
 
   // Cameras
-  async getCameras(params?: { site_id?: string }) {
-    const qs = params?.site_id ? `?site_id=${params.site_id}` : "";
-    return this.request<Camera[]>(`/api/cameras${qs}`);
+  async getCameras(params?: { site_id?: string; include_deleted?: boolean }) {
+    const qs = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
+    ).toString();
+    return this.request<Camera[]>(`/api/cameras${qs ? `?${qs}` : ""}`);
   }
 
   async createCamera(data: CreateCameraRequest) {
@@ -115,6 +117,10 @@ class ApiClient {
 
   async deleteCamera(id: string) {
     return this.request<void>(`/api/cameras/${id}`, { method: "DELETE" });
+  }
+
+  async restoreCamera(id: string) {
+    return this.request<Camera>(`/api/cameras/${id}/restore`, { method: "POST" });
   }
 
   async getCameraLatestFrame(cameraId: string): Promise<{ url: string; updated_at: string } | null> {
@@ -166,8 +172,9 @@ class ApiClient {
   }
 
   // Sites
-  async getSites() {
-    return this.request<Site[]>("/api/sites");
+  async getSites(params?: { include_deleted?: boolean }) {
+    const qs = params?.include_deleted ? "?include_deleted=true" : "";
+    return this.request<Site[]>(`/api/sites${qs}`);
   }
 
   async createSite(data: { name: string; address?: string; timezone?: string }) {
@@ -185,9 +192,14 @@ class ApiClient {
     return this.request<void>(`/api/sites/${id}`, { method: "DELETE" });
   }
 
+  async restoreSite(id: string) {
+    return this.request<Site>(`/api/sites/${id}/restore`, { method: "POST" });
+  }
+
   // Alert Rules
-  async getAlertRules() {
-    return this.request<AlertRule[]>("/api/alerts/rules");
+  async getAlertRules(params?: { include_deleted?: boolean }) {
+    const qs = params?.include_deleted ? "?include_deleted=true" : "";
+    return this.request<AlertRule[]>(`/api/alerts/rules${qs}`);
   }
 
   async createAlertRule(data: Partial<AlertRule>) {
@@ -206,6 +218,10 @@ class ApiClient {
 
   async deleteAlertRule(id: string) {
     return this.request<void>(`/api/alerts/rules/${id}`, { method: "DELETE" });
+  }
+
+  async restoreAlertRule(id: string) {
+    return this.request<AlertRule>(`/api/alerts/rules/${id}/restore`, { method: "POST" });
   }
 
   // Settings (org owner)
