@@ -17,6 +17,7 @@ class Organization(Base, TimestampMixin):
     plan: Mapped[str] = mapped_column(String(20), default="starter")
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Asia/Kolkata")
     whatsapp_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    whatsapp_alert_contacts: Mapped[list] = mapped_column(JSONB, default=list)
     settings: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     users = relationship("User", back_populates="organization", cascade="all, delete-orphan")

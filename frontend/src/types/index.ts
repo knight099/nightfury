@@ -190,6 +190,12 @@ export interface DigestPreferences {
   email_enabled: boolean;
 }
 
+export interface WhatsAppAlertContact {
+  id: string;
+  number: string;
+  enabled: boolean;
+}
+
 export interface AgentSummary {
   id: string;
   org_id: string;

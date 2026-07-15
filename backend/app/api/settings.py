@@ -15,6 +15,12 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import UserResponse
 from app.schemas.organization import OrgResponse, UpdateOrgRequest
+from app.schemas.whatsapp_alerts import (
+    CreateWhatsAppAlertContactRequest,
+    UpdateWhatsAppAlertContactRequest,
+    WhatsAppAlertContact,
+)
+from app.services.whatsapp_alert_service import whatsapp_alert_service
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -255,3 +261,72 @@ async def org_ai_usage(
         "by_user": per_user,
         "recent": recent,
     }
+
+
+# ── WhatsApp Instant Alerts (owner) ──────────────────────────────────────────
+
+
+async def _get_org_or_404(db: AsyncSession, user: User) -> Organization:
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="No organization associated")
+    result = await db.execute(select(Organization).where(Organization.id == user.org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org
+
+
+@router.get("/whatsapp-alerts", response_model=list[WhatsAppAlertContact])
+async def list_whatsapp_alert_contacts(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    org = await _get_org_or_404(db, user)
+    return org.whatsapp_alert_contacts
+
+
+@router.post("/whatsapp-alerts", response_model=list[WhatsAppAlertContact], status_code=201)
+async def add_whatsapp_alert_contact(
+    body: CreateWhatsAppAlertContactRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "owner")
+    org = await _get_org_or_404(db, user)
+    try:
+        return await whatsapp_alert_service.add_contact(org, body.number, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/whatsapp-alerts/{contact_id}", response_model=list[WhatsAppAlertContact])
+async def update_whatsapp_alert_contact(
+    contact_id: str,
+    body: UpdateWhatsAppAlertContactRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "owner")
+    org = await _get_org_or_404(db, user)
+    try:
+        return await whatsapp_alert_service.update_contact(
+            org, contact_id, db, number=body.number, enabled=body.enabled
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/whatsapp-alerts/{contact_id}", response_model=list[WhatsAppAlertContact])
+async def delete_whatsapp_alert_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "owner")
+    org = await _get_org_or_404(db, user)
+    try:
+        return await whatsapp_alert_service.delete_contact(org, contact_id, db)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))

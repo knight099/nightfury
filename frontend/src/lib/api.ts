@@ -15,6 +15,7 @@ import type {
   PairCodeResponse,
   Site,
   User,
+  WhatsAppAlertContact,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -239,6 +240,28 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ new_password: newPassword }),
     });
+  }
+
+  async getWhatsAppAlertContacts() {
+    return this.request<WhatsAppAlertContact[]>("/api/settings/whatsapp-alerts");
+  }
+
+  async addWhatsAppAlertContact(number: string) {
+    return this.request<WhatsAppAlertContact[]>("/api/settings/whatsapp-alerts", {
+      method: "POST",
+      body: JSON.stringify({ number }),
+    });
+  }
+
+  async updateWhatsAppAlertContact(id: string, data: { number?: string; enabled?: boolean }) {
+    return this.request<WhatsAppAlertContact[]>(`/api/settings/whatsapp-alerts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteWhatsAppAlertContact(id: string) {
+    return this.request<WhatsAppAlertContact[]>(`/api/settings/whatsapp-alerts/${id}`, { method: "DELETE" });
   }
 
   // Admin
