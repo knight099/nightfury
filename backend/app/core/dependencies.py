@@ -43,7 +43,9 @@ async def get_current_user(
 
     # Load user from DB
     user_id = session["user_id"]
-    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    result = await db.execute(
+        select(User).where(User.id == uuid.UUID(user_id), User.deleted_at.is_(None))
+    )
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:

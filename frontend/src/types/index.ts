@@ -6,6 +6,7 @@ export interface User {
   org_id: string | null;
   is_active: boolean;
   must_change_password: boolean;
+  deleted_at?: string | null;
 }
 
 export interface Organization {
@@ -188,6 +189,12 @@ export interface DigestPreferences {
   evening_local_time: string;
   whatsapp_enabled: boolean;
   email_enabled: boolean;
+}
+
+export interface WhatsAppAlertContact {
+  id: string;
+  number: string;
+  enabled: boolean;
 }
 
 export interface AgentSummary {

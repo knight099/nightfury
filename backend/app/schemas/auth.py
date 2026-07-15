@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -27,6 +29,7 @@ class UserResponse(BaseModel):
     org_id: uuid.UUID | None
     is_active: bool
     must_change_password: bool = False
+    deleted_at: datetime | None = None
 
     class Config:
         from_attributes = True

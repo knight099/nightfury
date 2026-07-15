@@ -23,6 +23,7 @@ class SiteResponse(BaseModel):
     address: str | None
     timezone: str
     created_at: datetime
+    deleted_at: datetime | None = None
 
     class Config:
         from_attributes = True

@@ -12,20 +12,22 @@ interface Org {
   slug: string;
   plan: string;
   created_at: string;
+  deleted_at: string | null;
 }
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"users" | "orgs">("users");
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const { data: orgs } = useQuery({
-    queryKey: ["admin", "orgs"],
-    queryFn: () => api.adminGetOrgs(),
+    queryKey: ["admin", "orgs", showDeleted],
+    queryFn: () => api.adminGetOrgs(showDeleted),
   });
 
   const { data: users, isLoading: usersLoading } = useQuery({
-    queryKey: ["admin", "users"],
-    queryFn: () => api.adminGetUsers(),
+    queryKey: ["admin", "users", showDeleted],
+    queryFn: () => api.adminGetUsers({ include_deleted: showDeleted }),
   });
 
   const invalidateAll = () => {
@@ -37,27 +39,38 @@ export default function AdminPage() {
       <h1 className="text-2xl font-bold text-[#F5F5F5] mb-1">Admin Panel</h1>
       <p className="text-xs text-[#666666] mb-6">God mode — full control over all orgs, users, passwords, sessions</p>
 
-      <div className="flex gap-2 mb-6">
-        <button
-          onClick={() => setTab("users")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            tab === "users"
-              ? "bg-[#1E90FF] text-white"
-              : "bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] hover:text-[#F5F5F5]"
-          }`}
-        >
-          Users ({users?.length || 0})
-        </button>
-        <button
-          onClick={() => setTab("orgs")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            tab === "orgs"
-              ? "bg-[#1E90FF] text-white"
-              : "bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] hover:text-[#F5F5F5]"
-          }`}
-        >
-          Organizations ({orgs?.length || 0})
-        </button>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTab("users")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === "users"
+                ? "bg-[#1E90FF] text-white"
+                : "bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] hover:text-[#F5F5F5]"
+            }`}
+          >
+            Users ({users?.length || 0})
+          </button>
+          <button
+            onClick={() => setTab("orgs")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === "orgs"
+                ? "bg-[#1E90FF] text-white"
+                : "bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] hover:text-[#F5F5F5]"
+            }`}
+          >
+            Organizations ({orgs?.length || 0})
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-[#A3A3A3]">
+          <input
+            type="checkbox"
+            checked={showDeleted}
+            onChange={(e) => setShowDeleted(e.target.checked)}
+            className="rounded"
+          />
+          Show deleted
+        </label>
       </div>
 
       {tab === "users" && (
@@ -81,6 +94,11 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.adminDeleteUser(id),
+    onSuccess: onMutate,
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.adminRestoreUser(id),
     onSuccess: onMutate,
   });
 
@@ -210,9 +228,19 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
                     {u.must_change_password && (
                       <span className="text-xs px-2 py-0.5 rounded bg-[#F97316]/20 text-[#F97316]">temp pass</span>
                     )}
+                    {u.deleted_at && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">deleted</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {changePasswordId === u.id ? (
+                    {u.deleted_at ? (
+                      <button
+                        onClick={() => restoreMutation.mutate(u.id)}
+                        className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#4ADE80] transition-colors"
+                      >
+                        Restore
+                      </button>
+                    ) : changePasswordId === u.id ? (
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
@@ -389,6 +417,11 @@ function OrgsTab({ orgs, onMutate }: { orgs: Org[]; onMutate: () => void }) {
     onSuccess: onMutate,
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.adminRestoreOrg(id),
+    onSuccess: onMutate,
+  });
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -478,20 +511,34 @@ function OrgsTab({ orgs, onMutate }: { orgs: Org[]; onMutate: () => void }) {
                   <span className="text-xs text-[#666666]">{org.slug}</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-[#1E90FF]/20 text-[#1E90FF]">{org.plan || "free"}</span>
                   <span className="text-xs text-[#666666]">{new Date(org.created_at).toLocaleDateString()}</span>
+                  {org.deleted_at && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">deleted</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setEditingId(org.id); setEditName(org.name); setEditPlan(org.plan || "free"); }}
-                    className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#1E90FF] transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => { if (confirm(`Delete "${org.name}" and ALL its users/cameras/data?`)) deleteMutation.mutate(org.id); }}
-                    className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#EF4444] transition-colors"
-                  >
-                    Delete
-                  </button>
+                  {org.deleted_at ? (
+                    <button
+                      onClick={() => restoreMutation.mutate(org.id)}
+                      className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#4ADE80] transition-colors"
+                    >
+                      Restore
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { setEditingId(org.id); setEditName(org.name); setEditPlan(org.plan || "free"); }}
+                        className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#1E90FF] transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => { if (confirm(`Delete "${org.name}" and ALL its users/cameras/data? This can be restored later from Admin → Show deleted.`)) deleteMutation.mutate(org.id); }}
+                        className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#EF4444] transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
