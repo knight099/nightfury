@@ -20,8 +20,11 @@ async def list_sites(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     org_id: uuid.UUID | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
-    q = select(Site).where(Site.deleted_at.is_(None))
+    q = select(Site)
+    if not include_deleted:
+        q = q.where(Site.deleted_at.is_(None))
     if user.role == "super_admin":
         if org_id:
             q = q.where(Site.org_id == org_id)

@@ -20,8 +20,10 @@ from app.services.soft_delete_service import soft_delete_service
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-def _rule_query(user: User):
-    q = select(AlertRule).where(AlertRule.deleted_at.is_(None))
+def _rule_query(user: User, include_deleted: bool = False):
+    q = select(AlertRule)
+    if not include_deleted:
+        q = q.where(AlertRule.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(AlertRule.org_id == user.org_id)
     return q
@@ -32,8 +34,9 @@ async def list_rules(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     org_id: uuid.UUID | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
-    q = _rule_query(user)
+    q = _rule_query(user, include_deleted=include_deleted)
     if user.role == "super_admin" and org_id:
         q = q.where(AlertRule.org_id == org_id)
     result = await db.execute(q.order_by(AlertRule.created_at.desc()))

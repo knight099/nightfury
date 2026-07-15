@@ -32,8 +32,10 @@ router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 RTMP_INGEST_BASE = "rtmp://ingest.nightwatch.ai/live"
 
 
-def _camera_query(user: User):
-    q = select(Camera).where(Camera.deleted_at.is_(None))
+def _camera_query(user: User, include_deleted: bool = False):
+    q = select(Camera)
+    if not include_deleted:
+        q = q.where(Camera.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(Camera.org_id == user.org_id)
     return q
@@ -46,8 +48,9 @@ async def list_cameras(
     site_id: uuid.UUID | None = Query(None),
     status: str | None = Query(None),
     org_id: uuid.UUID | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
-    q = _camera_query(user)
+    q = _camera_query(user, include_deleted=include_deleted)
     if user.role == "super_admin" and org_id:
         q = q.where(Camera.org_id == org_id)
     if site_id:

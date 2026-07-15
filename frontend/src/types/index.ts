@@ -25,6 +25,7 @@ export interface Site {
   address: string | null;
   timezone: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface Camera {
@@ -43,6 +44,7 @@ export interface Camera {
   idle_fps: number;
   active_fps: number;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DetectionZone {
@@ -93,6 +95,7 @@ export interface AlertRule {
   cooldown_seconds: number;
   enabled: boolean;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface TimeWindow {
