@@ -36,6 +36,13 @@ class Config(BaseSettings):
     active_fps: float = 5.0
     no_motion_timeout: float = 10.0
 
+    # YOLO local detection (gates + short-circuits Gemini calls)
+    yolo_enabled: bool = True
+    yolo_model_path: str = "models/yolov8n.onnx"
+    yolo_input_size: int = 640
+    yolo_fastpath_confidence: float = 0.75
+    yolo_escalate_floor: float = 0.35
+
     # Worker
     worker_id: str = "worker-local"
     max_cameras: int = 12
