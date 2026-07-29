@@ -15,12 +15,15 @@ from app.schemas.alert import (
     CreateAlertRuleRequest,
     UpdateAlertRuleRequest,
 )
+from app.services.soft_delete_service import soft_delete_service
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-def _rule_query(user: User):
+def _rule_query(user: User, include_deleted: bool = False):
     q = select(AlertRule)
+    if not include_deleted:
+        q = q.where(AlertRule.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(AlertRule.org_id == user.org_id)
     return q
@@ -31,8 +34,9 @@ async def list_rules(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     org_id: uuid.UUID | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
-    q = _rule_query(user)
+    q = _rule_query(user, include_deleted=include_deleted)
     if user.role == "super_admin" and org_id:
         q = q.where(AlertRule.org_id == org_id)
     result = await db.execute(q.order_by(AlertRule.created_at.desc()))
@@ -99,7 +103,28 @@ async def delete_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    await db.delete(rule)
+    await soft_delete_service.delete_alert_rule(rule, db)
+
+
+@router.post("/rules/{rule_id}/restore", response_model=AlertRuleResponse)
+async def restore_rule(
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "admin")
+
+    q = select(AlertRule).where(AlertRule.id == rule_id)
+    if user.role != "super_admin":
+        q = q.where(AlertRule.org_id == user.org_id)
+    result = await db.execute(q)
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    if rule.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Rule is not deleted")
+    await soft_delete_service.restore_alert_rule(rule, db)
+    return AlertRuleResponse.model_validate(rule)
 
 
 @router.get("/history", response_model=list[AlertHistoryResponse])

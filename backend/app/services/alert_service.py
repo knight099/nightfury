@@ -20,6 +20,7 @@ class AlertService:
             select(AlertRule).where(
                 AlertRule.org_id == event.org_id,
                 AlertRule.enabled == True,
+                AlertRule.deleted_at.is_(None),
             )
         )
         rules = result.scalars().all()

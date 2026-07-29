@@ -12,11 +12,13 @@ export default function AlertsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [showAdd, setShowAdd] = useState(false);
-  const canManage = user?.role === "super_admin" || user?.role === "owner" || user?.role === "admin";
+  const [showDeleted, setShowDeleted] = useState(false);
+  const isSuperAdmin = user?.role === "super_admin";
+  const canManage = isSuperAdmin || user?.role === "owner" || user?.role === "admin";
 
   const { data: rules, isLoading } = useQuery({
-    queryKey: ["alert-rules"],
-    queryFn: () => api.getAlertRules(),
+    queryKey: ["alert-rules", showDeleted],
+    queryFn: () => api.getAlertRules({ include_deleted: showDeleted }),
   });
 
   const toggleMutation = useMutation({
@@ -30,10 +32,28 @@ export default function AlertsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alert-rules"] }),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.restoreAlertRule(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alert-rules"] }),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Alert Rules</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold">Alert Rules</h1>
+          {isSuperAdmin && (
+            <label className="flex items-center gap-2 text-xs text-[#A3A3A3]">
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={(e) => setShowDeleted(e.target.checked)}
+                className="rounded"
+              />
+              Show deleted
+            </label>
+          )}
+        </div>
         {canManage && (
           <button
             onClick={() => setShowAdd(true)}
@@ -86,14 +106,28 @@ export default function AlertsPage() {
                 <span className={`font-medium text-sm ${!rule.enabled ? "text-[#666666]" : ""}`}>
                   {rule.name}
                 </span>
+                {rule.deleted_at && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">deleted</span>
+                )}
               </div>
-              {canManage && (
-                <button
-                  onClick={() => deleteMutation.mutate(rule.id)}
-                  className="p-2.5 sm:p-1 text-[#666666] hover:text-red-400"
-                >
-                  <Trash2 size={14} />
-                </button>
+              {rule.deleted_at ? (
+                canManage && (
+                  <button
+                    onClick={() => restoreMutation.mutate(rule.id)}
+                    className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#4ADE80] transition-colors"
+                  >
+                    Restore
+                  </button>
+                )
+              ) : (
+                canManage && (
+                  <button
+                    onClick={() => deleteMutation.mutate(rule.id)}
+                    className="p-2.5 sm:p-1 text-[#666666] hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-[#A3A3A3]">

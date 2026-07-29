@@ -68,8 +68,12 @@ def compute_evening_window(
 async def _run_for_org(org_id, kind: str):
     async with async_session_factory() as db:
         org = (
-            await db.execute(select(Organization).where(Organization.id == org_id))
-        ).scalar_one()
+            await db.execute(
+                select(Organization).where(Organization.id == org_id, Organization.deleted_at.is_(None))
+            )
+        ).scalar_one_or_none()
+        if org is None:
+            return
         prefs = (
             await db.execute(
                 select(DigestPreferences).where(DigestPreferences.org_id == org_id)
@@ -116,7 +120,9 @@ async def schedule_all(scheduler) -> None:
         logger.warning("apscheduler unavailable; skipping schedule_all")
         return
     async with async_session_factory() as db:
-        orgs = (await db.execute(select(Organization))).scalars().all()
+        orgs = (
+            await db.execute(select(Organization).where(Organization.deleted_at.is_(None)))
+        ).scalars().all()
         for org in orgs:
             tz = org.timezone or "Asia/Kolkata"
             prefs = (

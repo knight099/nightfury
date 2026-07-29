@@ -24,6 +24,7 @@ from app.schemas.camera import (
     WebRTCOfferRequest,
 )
 from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
+from app.services.soft_delete_service import soft_delete_service
 from app.services.stream_token import sign_stream_token
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
@@ -31,8 +32,10 @@ router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 RTMP_INGEST_BASE = "rtmp://ingest.nightwatch.ai/live"
 
 
-def _camera_query(user: User):
+def _camera_query(user: User, include_deleted: bool = False):
     q = select(Camera)
+    if not include_deleted:
+        q = q.where(Camera.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(Camera.org_id == user.org_id)
     return q
@@ -45,8 +48,9 @@ async def list_cameras(
     site_id: uuid.UUID | None = Query(None),
     status: str | None = Query(None),
     org_id: uuid.UUID | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
-    q = _camera_query(user)
+    q = _camera_query(user, include_deleted=include_deleted)
     if user.role == "super_admin" and org_id:
         q = q.where(Camera.org_id == org_id)
     if site_id:
@@ -68,7 +72,9 @@ async def create_camera(
 
     org_id = user.org_id
     if user.role == "super_admin":
-        site_result = await db.execute(select(Site).where(Site.id == body.site_id))
+        site_result = await db.execute(
+            select(Site).where(Site.id == body.site_id, Site.deleted_at.is_(None))
+        )
         site = site_result.scalar_one_or_none()
         if not site:
             raise HTTPException(status_code=404, detail="Site not found")
@@ -149,7 +155,28 @@ async def delete_camera(
     camera = result.scalar_one_or_none()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    await db.delete(camera)
+    await soft_delete_service.delete_camera(camera, db)
+
+
+@router.post("/{camera_id}/restore", response_model=CameraResponse)
+async def restore_camera(
+    camera_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "admin")
+
+    q = select(Camera).where(Camera.id == camera_id)
+    if user.role != "super_admin":
+        q = q.where(Camera.org_id == user.org_id)
+    result = await db.execute(q)
+    camera = result.scalar_one_or_none()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if camera.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Camera is not deleted")
+    await soft_delete_service.restore_camera(camera, db)
+    return CameraResponse.model_validate(camera)
 
 
 @router.get("/{camera_id}/latest-frame", response_model=LatestFrameResponse)

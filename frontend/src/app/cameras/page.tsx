@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import Link from "next/link";
-import { Plus, Trash2, Square, MoreVertical, Link2 } from "lucide-react";
+import { Plus, Trash2, Square, MoreVertical, Link2, RotateCcw } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useEventsSocket } from "@/lib/useEventsSocket";
 import { CameraTile } from "@/components/cameras/CameraTile";
@@ -18,11 +18,13 @@ export default function CamerasPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [zonesCamera, setZonesCamera] = useState<Camera | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const canManage = user?.role === "super_admin" || user?.role === "owner" || user?.role === "admin";
+  const [showDeleted, setShowDeleted] = useState(false);
+  const isSuperAdmin = user?.role === "super_admin";
+  const canManage = isSuperAdmin || user?.role === "owner" || user?.role === "admin";
 
   const { data: cameras, isLoading } = useQuery({
-    queryKey: ["cameras"],
-    queryFn: () => api.getCameras(),
+    queryKey: ["cameras", showDeleted],
+    queryFn: () => api.getCameras({ include_deleted: showDeleted }),
   });
 
   const { data: sites } = useQuery({
@@ -57,6 +59,11 @@ export default function CamerasPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cameras"] }),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.restoreCamera(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cameras"] }),
+  });
+
   useEffect(() => {
     if (!openMenuId) return;
     const close = () => setOpenMenuId(null);
@@ -72,6 +79,17 @@ export default function CamerasPage() {
         <div className="flex items-baseline gap-3">
           <h1 className="text-xl font-bold">Cameras</h1>
           <span className="text-xs text-[#666666]">{cameraCount} total</span>
+          {isSuperAdmin && (
+            <label className="flex items-center gap-2 text-xs text-[#A3A3A3]">
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={(e) => setShowDeleted(e.target.checked)}
+                className="rounded"
+              />
+              Show deleted
+            </label>
+          )}
         </div>
         {canManage && (
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -123,8 +141,21 @@ export default function CamerasPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {cameras?.map((cam: Camera) => (
             <div key={cam.id} className="relative">
-              <CameraTile camera={cam} lastEventAt={lastEventByCamera[cam.id] ?? null} />
-              {canManage && (
+              {cam.deleted_at ? (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-[#111111] border border-dashed border-[#2A2A2A] rounded-lg p-6" style={{ aspectRatio: "16 / 9" }}>
+                  <span className="text-sm font-medium text-[#A3A3A3]">{cam.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">deleted</span>
+                  <button
+                    onClick={() => restoreMutation.mutate(cam.id)}
+                    className="mt-1 flex items-center gap-1 text-xs px-3 py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md hover:text-[#4ADE80] transition-colors"
+                  >
+                    <RotateCcw size={12} /> Restore
+                  </button>
+                </div>
+              ) : (
+                <CameraTile camera={cam} lastEventAt={lastEventByCamera[cam.id] ?? null} />
+              )}
+              {canManage && !cam.deleted_at && (
                 <div className="absolute top-2 right-2">
                   <button
                     onClick={(e) => {

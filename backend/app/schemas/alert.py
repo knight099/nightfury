@@ -46,6 +46,7 @@ class AlertRuleResponse(BaseModel):
     cooldown_seconds: int
     enabled: bool
     created_at: datetime
+    deleted_at: datetime | None = None
 
     class Config:
         from_attributes = True

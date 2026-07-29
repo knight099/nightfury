@@ -6,6 +6,7 @@ export interface User {
   org_id: string | null;
   is_active: boolean;
   must_change_password: boolean;
+  deleted_at?: string | null;
 }
 
 export interface Organization {
@@ -24,6 +25,7 @@ export interface Site {
   address: string | null;
   timezone: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface Camera {
@@ -42,6 +44,7 @@ export interface Camera {
   idle_fps: number;
   active_fps: number;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DetectionZone {
@@ -92,6 +95,7 @@ export interface AlertRule {
   cooldown_seconds: number;
   enabled: boolean;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface TimeWindow {
@@ -188,6 +192,12 @@ export interface DigestPreferences {
   evening_local_time: string;
   whatsapp_enabled: boolean;
   email_enabled: boolean;
+}
+
+export interface WhatsAppAlertContact {
+  id: string;
+  number: string;
+  enabled: boolean;
 }
 
 export interface AgentSummary {

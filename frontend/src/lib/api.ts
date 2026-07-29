@@ -15,6 +15,7 @@ import type {
   PairCodeResponse,
   Site,
   User,
+  WhatsAppAlertContact,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -93,9 +94,11 @@ class ApiClient {
   }
 
   // Cameras
-  async getCameras(params?: { site_id?: string }) {
-    const qs = params?.site_id ? `?site_id=${params.site_id}` : "";
-    return this.request<Camera[]>(`/api/cameras${qs}`);
+  async getCameras(params?: { site_id?: string; include_deleted?: boolean }) {
+    const qs = new URLSearchParams(
+      Object.entries(params || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
+    ).toString();
+    return this.request<Camera[]>(`/api/cameras${qs ? `?${qs}` : ""}`);
   }
 
   async createCamera(data: CreateCameraRequest) {
@@ -114,6 +117,10 @@ class ApiClient {
 
   async deleteCamera(id: string) {
     return this.request<void>(`/api/cameras/${id}`, { method: "DELETE" });
+  }
+
+  async restoreCamera(id: string) {
+    return this.request<Camera>(`/api/cameras/${id}/restore`, { method: "POST" });
   }
 
   async getCameraLatestFrame(cameraId: string): Promise<{ url: string; updated_at: string } | null> {
@@ -165,8 +172,9 @@ class ApiClient {
   }
 
   // Sites
-  async getSites() {
-    return this.request<Site[]>("/api/sites");
+  async getSites(params?: { include_deleted?: boolean }) {
+    const qs = params?.include_deleted ? "?include_deleted=true" : "";
+    return this.request<Site[]>(`/api/sites${qs}`);
   }
 
   async createSite(data: { name: string; address?: string; timezone?: string }) {
@@ -184,9 +192,14 @@ class ApiClient {
     return this.request<void>(`/api/sites/${id}`, { method: "DELETE" });
   }
 
+  async restoreSite(id: string) {
+    return this.request<Site>(`/api/sites/${id}/restore`, { method: "POST" });
+  }
+
   // Alert Rules
-  async getAlertRules() {
-    return this.request<AlertRule[]>("/api/alerts/rules");
+  async getAlertRules(params?: { include_deleted?: boolean }) {
+    const qs = params?.include_deleted ? "?include_deleted=true" : "";
+    return this.request<AlertRule[]>(`/api/alerts/rules${qs}`);
   }
 
   async createAlertRule(data: Partial<AlertRule>) {
@@ -205,6 +218,10 @@ class ApiClient {
 
   async deleteAlertRule(id: string) {
     return this.request<void>(`/api/alerts/rules/${id}`, { method: "DELETE" });
+  }
+
+  async restoreAlertRule(id: string) {
+    return this.request<AlertRule>(`/api/alerts/rules/${id}/restore`, { method: "POST" });
   }
 
   // Settings (org owner)
@@ -241,14 +258,37 @@ class ApiClient {
     });
   }
 
-  // Admin
-  async adminGetOrgs() {
-    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string }[]>("/api/admin/orgs");
+  async getWhatsAppAlertContacts() {
+    return this.request<WhatsAppAlertContact[]>("/api/settings/whatsapp-alerts");
   }
 
-  async adminGetUsers(params?: { org_id?: string; role?: string }) {
+  async addWhatsAppAlertContact(number: string) {
+    return this.request<WhatsAppAlertContact[]>("/api/settings/whatsapp-alerts", {
+      method: "POST",
+      body: JSON.stringify({ number }),
+    });
+  }
+
+  async updateWhatsAppAlertContact(id: string, data: { number?: string; enabled?: boolean }) {
+    return this.request<WhatsAppAlertContact[]>(`/api/settings/whatsapp-alerts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteWhatsAppAlertContact(id: string) {
+    return this.request<WhatsAppAlertContact[]>(`/api/settings/whatsapp-alerts/${id}`, { method: "DELETE" });
+  }
+
+  // Admin
+  async adminGetOrgs(includeDeleted = false) {
+    const qs = includeDeleted ? "?include_deleted=true" : "";
+    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }[]>(`/api/admin/orgs${qs}`);
+  }
+
+  async adminGetUsers(params?: { org_id?: string; role?: string; include_deleted?: boolean }) {
     const qs = new URLSearchParams(
-      Object.entries(params || {}).filter(([, v]) => v !== undefined) as [string, string][]
+      Object.entries(params || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
     ).toString();
     return this.request<User[]>(`/api/admin/users${qs ? `?${qs}` : ""}`);
   }
@@ -290,6 +330,10 @@ class ApiClient {
     return this.request<void>(`/api/admin/users/${userId}`, { method: "DELETE" });
   }
 
+  async adminRestoreUser(userId: string) {
+    return this.request<User>(`/api/admin/users/${userId}/restore`, { method: "POST" });
+  }
+
   async adminCreateOrg(data: { name: string; plan?: string }) {
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string }>("/api/admin/orgs", {
       method: "POST",
@@ -306,6 +350,10 @@ class ApiClient {
 
   async adminDeleteOrg(orgId: string) {
     return this.request<void>(`/api/admin/orgs/${orgId}`, { method: "DELETE" });
+  }
+
+  async adminRestoreOrg(orgId: string) {
+    return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }>(`/api/admin/orgs/${orgId}/restore`, { method: "POST" });
   }
 
   // Digests

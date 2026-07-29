@@ -14,6 +14,7 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, UpdateUserRequest, UserResponse
 from app.schemas.organization import CreateOrgRequest, OrgResponse, UpdateOrgRequest
+from app.services.soft_delete_service import soft_delete_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -27,9 +28,13 @@ def _require_super_admin(user: User):
 async def list_all_orgs(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    include_deleted: bool = Query(False),
 ):
     _require_super_admin(user)
-    result = await db.execute(select(Organization).order_by(Organization.created_at.desc()))
+    q = select(Organization)
+    if not include_deleted:
+        q = q.where(Organization.deleted_at.is_(None))
+    result = await db.execute(q.order_by(Organization.created_at.desc()))
     return [OrgResponse.model_validate(o) for o in result.scalars().all()]
 
 
@@ -98,7 +103,26 @@ async def delete_org(
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    await db.delete(org)
+    if org.deleted_at is not None:
+        raise HTTPException(status_code=400, detail="Organization already deleted")
+    await soft_delete_service.delete_organization(org, db)
+
+
+@router.post("/orgs/{org_id}/restore", response_model=OrgResponse)
+async def restore_org(
+    org_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_super_admin(user)
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if org.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Organization is not deleted")
+    await soft_delete_service.restore_organization(org, db)
+    return OrgResponse.model_validate(org)
 
 
 @router.get("/users", response_model=list[UserResponse])
@@ -107,6 +131,7 @@ async def list_all_users(
     user: User = Depends(get_current_user),
     org_id: uuid.UUID | None = Query(None),
     role: str | None = Query(None),
+    include_deleted: bool = Query(False),
 ):
     _require_super_admin(user)
     q = select(User)
@@ -114,6 +139,8 @@ async def list_all_users(
         q = q.where(User.org_id == org_id)
     if role:
         q = q.where(User.role == role)
+    if not include_deleted:
+        q = q.where(User.deleted_at.is_(None))
     result = await db.execute(q.order_by(User.created_at.desc()))
     return [UserResponse.model_validate(u) for u in result.scalars().all()]
 
@@ -164,7 +191,26 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if target.role == "super_admin":
         raise HTTPException(status_code=400, detail="Cannot delete super admin")
-    await db.delete(target)
+    if target.deleted_at is not None:
+        raise HTTPException(status_code=400, detail="User already deleted")
+    await soft_delete_service.delete_user(target, db)
+
+
+@router.post("/users/{user_id}/restore", response_model=UserResponse)
+async def restore_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_super_admin(user)
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.deleted_at is None:
+        raise HTTPException(status_code=400, detail="User is not deleted")
+    await soft_delete_service.restore_user(target, db)
+    return UserResponse.model_validate(target)
 
 
 @router.post("/users/{user_id}/change-password", status_code=200)
