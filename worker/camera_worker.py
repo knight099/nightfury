@@ -15,6 +15,7 @@ from gemini_client import GeminiClient
 from event_packager import EventPackager
 from gcs_uploader import GCSUploader
 from api_client import ApiClient
+from yolo_detector import YoloDetector, decide
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class CameraWorker:
             active_fps=camera_config.active_fps,
         )
         self.gemini = gemini
+        self.yolo = YoloDetector()
         self.gcs = GCSUploader()
         self.api = ApiClient()
         self.packager = EventPackager(self.gcs, self.api)
@@ -49,6 +51,9 @@ class CameraWorker:
         self.frames_processed = 0
         self.events_detected = 0
         self.gemini_calls = 0
+        self.yolo_calls = 0
+        self.yolo_gated_frames = 0
+        self.yolo_fastpath_events = 0
         self.last_frame_time: float = 0
         self.errors: list[str] = []
 
@@ -98,6 +103,29 @@ class CameraWorker:
                 # Frame sampling decision
                 if not self.frame_sampler.should_sample(frame, has_motion):
                     continue
+
+                if config.yolo_enabled and self.yolo.available:
+                    self.yolo_calls += 1
+                    yolo_detections = await asyncio.to_thread(self.yolo.detect, frame)
+                    decision = decide(
+                        yolo_detections, self.camera_config,
+                        config.yolo_fastpath_confidence, config.yolo_escalate_floor,
+                    )
+
+                    if decision.action == "drop":
+                        self.yolo_gated_frames += 1
+                        continue
+
+                    if decision.action == "emit":
+                        self.yolo_fastpath_events += len(decision.events)
+                        for event in decision.events:
+                            self.events_detected += 1
+                            await self.packager.package_and_send(
+                                event, frame, self.ring_buffer, self.camera_config
+                            )
+                        continue
+
+                    # decision.action == "escalate" -> fall through to Gemini below
 
                 # Encode frame as JPEG for Gemini
                 _, jpeg_buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -167,6 +195,9 @@ class CameraWorker:
             "frames_processed": self.frames_processed,
             "events_detected": self.events_detected,
             "gemini_calls": self.gemini_calls,
+            "yolo_calls": self.yolo_calls,
+            "yolo_gated_frames": self.yolo_gated_frames,
+            "yolo_fastpath_events": self.yolo_fastpath_events,
             "buffer_duration": self.ring_buffer.duration_seconds,
             "sampler_state": self.frame_sampler.state,
             "errors": self.errors[-5:],

@@ -59,6 +59,14 @@
 - Cost: <1ms per frame — negligible
 - This is the #1 cost-saving measure — without it, Gemini bills explode
 
+### YOLO Local Detection Gate
+- After motion + frame sampling, a local YOLOv8n ONNX model (`yolo_detector.py`, CPU-only via onnxruntime) runs before any Gemini call
+- No relevant object (mapped from `enabled_events`) in frame → drop, no Gemini call at all
+- High-confidence person/vehicle/animal/intrusion (>= `YOLO_FASTPATH_CONFIDENCE`, default 0.75) → event emitted directly from YOLO, no Gemini call
+- Mid-confidence (between `YOLO_ESCALATE_FLOOR` and fastpath threshold) or any other enabled event type (loitering, custom types) → escalates to Gemini exactly as before
+- Model file lives at `models/yolov8n.onnx` (path configurable via `YOLO_MODEL_PATH`); if missing or fails to load, `YoloDetector.available` is `False` and every frame escalates to Gemini — fail-soft, never crashes the worker
+- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"`, then move the resulting `yolov8n.onnx` into `models/`
+
 ### Frame Sampling
 - Two states: IDLE (1 fps to AI) and ACTIVE (5 fps to AI)
 - Transition: motion detected → ACTIVE; no motion for 10s → IDLE
