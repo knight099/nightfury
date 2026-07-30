@@ -195,17 +195,15 @@ class YoloDetector:
     def detect(self, frame) -> list:
         if not self.available:
             return []
-        size = config.yolo_input_size
-        letterboxed, scale, pad_x, pad_y = self._letterbox(frame, size)
-        blob = self._preprocess(letterboxed)
-
         try:
+            size = config.yolo_input_size
+            letterboxed, scale, pad_x, pad_y = self._letterbox(frame, size)
+            blob = self._preprocess(letterboxed)
             outputs = self.session.run(None, {self.input_name: blob})
+            return self._postprocess(outputs[0], frame.shape, scale, pad_x, pad_y)
         except Exception as e:
             logger.warning(f"YOLO inference failed: {e}")
             return []
-
-        return self._postprocess(outputs[0], frame.shape, scale, pad_x, pad_y)
 
     def _letterbox(self, frame, size: int):
         h, w = frame.shape[:2]
