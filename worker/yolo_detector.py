@@ -60,17 +60,27 @@ def _zone_containing(bbox: BoundingBox, zones: list) -> str | None:
 
 
 def map_detections(detections: list, camera_config: CameraConfig) -> list:
-    """Maps raw YOLO detections to (event_type, detection, zone_name) candidates."""
+    """Maps raw YOLO detections to (event_type, detection, zone_name) candidates.
+
+    A person inside a configured zone qualifies as an intrusion candidate. If
+    "intrusion" is one of the camera's enabled events, only the intrusion
+    candidate is emitted for that detection (not a redundant plain "person"
+    candidate too) to avoid double-alerting on the same physical person. A
+    person outside any zone, or on a camera where "intrusion" isn't enabled,
+    still emits as a normal "person" candidate.
+    """
     results = []
+    enabled = set(camera_config.enabled_events)
     for d in detections:
         event_type = COCO_TO_EVENT_TYPE.get(d.coco_class)
         if event_type is None:
             continue
-        results.append((event_type, d, None))
         if event_type == "person":
             zone = _zone_containing(d.bbox, camera_config.detection_zones)
-            if zone is not None:
+            if zone is not None and "intrusion" in enabled:
                 results.append(("intrusion", d, zone))
+                continue
+        results.append((event_type, d, None))
     return results
 
 
@@ -87,7 +97,12 @@ def decide(
     escalate_floor: float,
 ) -> Decision:
     """Three-way decision: drop (no relevant detection), escalate to Gemini,
-    or emit events directly from YOLO output."""
+    or emit events directly from YOLO output.
+
+    `detections` must be a real list (possibly empty) of YoloDetection — never
+    None. A None result from YoloDetector.detect() means inference errored and
+    must be handled by the caller (escalate to Gemini) before decide() is
+    ever invoked."""
     enabled = set(camera_config.enabled_events)
     if not enabled.issubset(FASTPATH_EVENT_TYPES):
         return Decision(action="escalate")
@@ -192,7 +207,12 @@ class YoloDetector:
                 "all frames will escalate to Gemini as before"
             )
 
-    def detect(self, frame) -> list:
+    def detect(self, frame) -> list | None:
+        """Returns a list of YoloDetection on a clean run (possibly empty if
+        nothing was found), or None if inference threw mid-run. Callers must
+        NOT treat None the same as an empty list — None means the frame could
+        not be evaluated and should escalate to Gemini instead of being
+        silently dropped."""
         if not self.available:
             return []
         try:
@@ -203,7 +223,7 @@ class YoloDetector:
             return self._postprocess(outputs[0], frame.shape, scale, pad_x, pad_y)
         except Exception as e:
             logger.warning(f"YOLO inference failed: {e}")
-            return []
+            return None
 
     def _letterbox(self, frame, size: int):
         h, w = frame.shape[:2]

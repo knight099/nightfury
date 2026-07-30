@@ -107,25 +107,35 @@ class CameraWorker:
                 if config.yolo_enabled and self.yolo.available:
                     self.yolo_calls += 1
                     yolo_detections = await asyncio.to_thread(self.yolo.detect, frame)
-                    decision = decide(
-                        yolo_detections, self.camera_config,
-                        config.yolo_fastpath_confidence, config.yolo_escalate_floor,
-                    )
 
-                    if decision.action == "drop":
-                        self.yolo_gated_frames += 1
-                        continue
+                    if yolo_detections is None:
+                        # Inference errored mid-run; fail toward the safe path
+                        # (escalate to Gemini) rather than silently dropping
+                        # the frame. Do NOT call decide() with None.
+                        logger.warning(
+                            f"[{self.camera_config.name}] YOLO inference error on this "
+                            "frame; escalating to Gemini instead of dropping"
+                        )
+                    else:
+                        decision = decide(
+                            yolo_detections, self.camera_config,
+                            config.yolo_fastpath_confidence, config.yolo_escalate_floor,
+                        )
 
-                    if decision.action == "emit":
-                        self.yolo_fastpath_events += len(decision.events)
-                        for event in decision.events:
-                            self.events_detected += 1
-                            await self.packager.package_and_send(
-                                event, frame, self.ring_buffer, self.camera_config
-                            )
-                        continue
+                        if decision.action == "drop":
+                            self.yolo_gated_frames += 1
+                            continue
 
-                    # decision.action == "escalate" -> fall through to Gemini below
+                        if decision.action == "emit":
+                            self.yolo_fastpath_events += len(decision.events)
+                            for event in decision.events:
+                                self.events_detected += 1
+                                await self.packager.package_and_send(
+                                    event, frame, self.ring_buffer, self.camera_config
+                                )
+                            continue
+
+                        # decision.action == "escalate" -> fall through to Gemini below
 
                 # Encode frame as JPEG for Gemini
                 _, jpeg_buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
