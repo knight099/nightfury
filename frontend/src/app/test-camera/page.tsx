@@ -36,6 +36,18 @@ interface AnalysisMeta {
   cost_usd: number;
 }
 
+interface YoloDetection {
+  coco_class: string;
+  confidence: number;
+  bbox: { x1: number; y1: number; x2: number; y2: number };
+}
+
+interface YoloGateInfo {
+  action: "drop" | "escalate" | "fastpath";
+  detections: YoloDetection[];
+  latency_ms: number;
+}
+
 interface AnalysisResult {
   events: DetectedEvent[];
   person_count: number;
@@ -44,6 +56,8 @@ interface AnalysisResult {
   objects?: { boxes?: number; bags?: number; pallets?: number; packages?: number };
   scene_summary: string;
   _meta?: AnalysisMeta;
+  decision?: "drop" | "escalate" | "fastpath";
+  yolo?: YoloGateInfo;
 }
 
 interface AudioEvent {
@@ -132,6 +146,7 @@ export default function TestCameraPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [streaming, setStreaming] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzingYolo, setAnalyzingYolo] = useState(false);
   const [autoMode, setAutoMode] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
@@ -247,6 +262,31 @@ export default function TestCameraPage() {
       setAnalyzing(false);
     }
   }, [analyzing, captureFrame, buildPayload, addSessionStats]);
+
+  // Runs the frame through the local YOLO gate first (drop / fastpath / escalate),
+  // calling Gemini only when the gate escalates — lets you preview the same
+  // cost-reduction pipeline the worker uses, on demand.
+  const captureAndAnalyzeYolo = useCallback(async () => {
+    if (analyzingYolo) return;
+    const base64 = captureFrame();
+    if (!base64) return;
+    lastFrameRef.current = base64;
+    setAnalyzingYolo(true);
+    setError("");
+    try {
+      const data = await api.request<AnalysisResult>("/api/test-camera/analyze-yolo-gemini", {
+        method: "POST",
+        body: JSON.stringify({ image_base64: base64, scene_type: sceneType }),
+      });
+      setResult(data);
+      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data }].slice(-10));
+      if (data._meta) addSessionStats(data._meta);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzingYolo(false);
+    }
+  }, [analyzingYolo, captureFrame, sceneType, addSessionStats]);
 
   // Capture frame + 4s audio → single Gemini call → unified events
   const captureWithAudio = useCallback(async () => {
@@ -459,15 +499,24 @@ export default function TestCameraPage() {
             <>
               <button
                 onClick={captureAndAnalyze}
-                disabled={analyzing || combinedCapturing}
+                disabled={analyzing || analyzingYolo || combinedCapturing}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#1E90FF] text-white rounded-md text-sm hover:bg-[#3BA0FF] disabled:opacity-50 transition-colors"
               >
                 {analyzing ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
                 {analyzing ? "Analyzing..." : "Capture"}
               </button>
               <button
+                onClick={captureAndAnalyzeYolo}
+                disabled={analyzing || analyzingYolo || combinedCapturing}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] text-[#4ADE80] border border-[#4ADE80]/50 rounded-md text-sm hover:border-[#4ADE80] disabled:opacity-50 transition-colors"
+                title="Run the local YOLO gate first — only calls Gemini if the gate escalates"
+              >
+                {analyzingYolo ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                {analyzingYolo ? "Testing..." : "Capture (YOLO gate)"}
+              </button>
+              <button
                 onClick={captureWithAudio}
-                disabled={analyzing || combinedCapturing}
+                disabled={analyzing || analyzingYolo || combinedCapturing}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md text-sm hover:text-[#F5F5F5] hover:border-[#1E90FF] disabled:opacity-50 transition-colors"
                 title="Capture frame + 4s audio simultaneously"
               >
@@ -516,7 +565,7 @@ export default function TestCameraPage() {
                 <p className="text-[#666666] text-sm">Click &quot;Start Camera&quot; to begin</p>
               </div>
             )}
-            {(analyzing || combinedCapturing) && (
+            {(analyzing || analyzingYolo || combinedCapturing) && (
               <div className="absolute top-2 right-2 flex items-center gap-1.5">
                 <div className="bg-[#1E90FF] text-white text-xs px-2 py-1 rounded animate-pulse flex items-center gap-1">
                   {combinedCapturing && <Mic size={11} />}
@@ -545,6 +594,8 @@ export default function TestCameraPage() {
             )}
           </div>
           <canvas ref={canvasRef} className="hidden" />
+
+          {result?.decision && result.yolo && <YoloGateBadge decision={result.decision} yolo={result.yolo} />}
 
           {result && (
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -774,6 +825,28 @@ function StatBox({ label, value, color = "#F5F5F5" }: { label: string; value: nu
     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2 text-center">
       <div className="text-xs text-[#666666] uppercase">{label}</div>
       <div className="text-lg font-bold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+function YoloGateBadge({ decision, yolo }: { decision: "drop" | "escalate" | "fastpath"; yolo: YoloGateInfo }) {
+  const config: Record<string, { label: string; color: string; note: string }> = {
+    drop: { label: "DROPPED", color: "#666666", note: "No relevant objects detected locally — Gemini was not called." },
+    fastpath: { label: "FAST-PATHED", color: "#4ADE80", note: "High-confidence local detection — Gemini was not called." },
+    escalate: { label: "ESCALATED", color: "#1E90FF", note: "Escalated to Gemini for a full analysis." },
+  };
+  const c = config[decision] ?? config.escalate;
+  return (
+    <div className="bg-[#111111] border rounded-lg p-2 text-xs flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: c.color }}>
+      <div className="flex items-center gap-2">
+        <span className="px-2 py-0.5 rounded font-bold" style={{ backgroundColor: `${c.color}20`, color: c.color }}>
+          YOLO gate: {c.label}
+        </span>
+        <span className="text-[#A3A3A3]">{c.note}</span>
+      </div>
+      <span className="text-[#666666]">
+        {yolo.detections.length} raw detection{yolo.detections.length === 1 ? "" : "s"} · {yolo.latency_ms}ms
+      </span>
     </div>
   );
 }

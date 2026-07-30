@@ -662,6 +662,259 @@ async def analyze_frame(
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
 
 
+# ── YOLO+Gemini test agent ────────────────────────────────────────────────
+# Runs the same gate/fastpath/escalate decision the worker pipeline uses
+# (see worker/yolo_detector.py) before ever calling Gemini, so this endpoint
+# can be used to preview the cost-reduction behavior on demand from the
+# browser. Restricted to person/vehicle/animal/intrusion — the only event
+# types the local YOLO model can gate on — regardless of scene_type; no
+# detection-zone UI exists here, so "intrusion" never actually fires (a
+# person always emits as a plain "person" event), same as a camera with no
+# configured zones in production.
+
+YOLO_TEST_EVENT_TYPES = ["person", "vehicle", "animal", "intrusion"]
+
+
+def build_yolo_test_prompt(scene_type: str) -> str:
+    """Prompt for the escalate path — restricted to the same fixed event set
+    the local YOLO gate evaluates, so Gemini's answer stays comparable to
+    what the gate would have fast-pathed."""
+    enabled_events_str = ", ".join(YOLO_TEST_EVENT_TYPES)
+    return f"""You are an expert surveillance AI analyst for {scene_type.replace("_", " ")} environments.
+Analyze this camera frame for events of interest.
+
+Enabled detections: {enabled_events_str}
+
+Respond ONLY with valid JSON matching this schema:
+{{
+  "events": [
+    {{
+      "event_type": "<one of: {enabled_events_str}>",
+      "confidence": <float 0.0-1.0>,
+      "severity": "<low|medium|high|critical>",
+      "description": "<one sentence a security guard would understand>",
+      "bounding_boxes": [{{"x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>, "label": "<short label>"}}]
+    }}
+  ],
+  "person_count": <int>,
+  "people": [
+    {{
+      "description": "<gender/age estimate, clothing>",
+      "carrying": "<bag, box, package, tool, weapon, none>",
+      "carrying_count": <int>,
+      "activity": "<walking, standing, running, sitting, working, etc.>",
+      "ppe": {{"helmet": <bool>, "vest": <bool>, "gloves": <bool>, "mask": <bool>}}
+    }}
+  ],
+  "vehicles": [
+    {{
+      "type": "<car, truck, van, motorcycle, bicycle, etc.>",
+      "color": "<dominant color>",
+      "license_plate": "<plate text if readable, else null>",
+      "license_plate_confidence": <float 0.0-1.0>,
+      "direction": "<entering, exiting, parked, moving_left, moving_right, stationary>"
+    }}
+  ],
+  "scene_summary": "<2-3 sentence description: what's happening, any concerns>"
+}}
+
+Rules:
+- Only detect events from the enabled list above (person, vehicle, animal, intrusion)
+- If nothing notable, return empty events array but still fill people/vehicles/scene_summary
+- Confidence must reflect true certainty
+- Severity guide: low=routine, medium=attention needed, high=immediate response, critical=emergency
+- Bounding box coordinates: pixel values for 1280x720 frame
+- Do NOT hallucinate events that aren't clearly visible"""
+
+
+class AnalyzeYoloGeminiRequest(BaseModel):
+    image_base64: str
+    scene_type: str = "general_security"
+
+
+def _yolo_event_to_dict(event) -> dict:
+    return {
+        "event_type": event.event_type,
+        "confidence": event.confidence,
+        "severity": event.severity,
+        "description": event.description,
+        "bounding_boxes": [
+            {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2, "label": b.label}
+            for b in event.bounding_boxes
+        ],
+    }
+
+
+def _yolo_detection_to_dict(detection) -> dict:
+    b = detection.bbox
+    return {
+        "coco_class": detection.coco_class,
+        "confidence": detection.confidence,
+        "bbox": {"x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2},
+    }
+
+
+@router.post("/analyze-yolo-gemini")
+async def analyze_yolo_gemini(
+    body: AnalyzeYoloGeminiRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Analyze a single frame through the local YOLO gate first (drop / fastpath
+    / escalate), calling Gemini only on escalation — lets you test the same
+    cost-reduction pipeline the worker uses, on demand, from the browser."""
+    require_role(user, "operator")
+
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        raise HTTPException(status_code=500, detail="opencv-python-headless not installed on backend")
+
+    from app.services.yolo_test_detector import decide, get_yolo_test_detector
+
+    image_data = base64.b64decode(body.image_base64)
+    started = time.monotonic()
+
+    frame = cv2.imdecode(np.frombuffer(image_data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Could not decode image")
+
+    detector = get_yolo_test_detector()
+
+    decision = None
+    decision_action = "escalate"
+    yolo_detections = None
+    if detector.available:
+        # detect() only returns None on a mid-run inference error (never when
+        # available=False, which short-circuits to [] before trying inference)
+        # — that [] "clean, nothing found" case still needs the gate to run,
+        # while None must skip decide() entirely and escalate, same as camera_worker.py.
+        yolo_detections = detector.detect(frame)
+        if yolo_detections is not None:
+            decision = decide(
+                yolo_detections,
+                settings.yolo_test_fastpath_confidence,
+                settings.yolo_test_escalate_floor,
+            )
+            decision_action = decision.action
+
+    yolo_latency_ms = int((time.monotonic() - started) * 1000)
+    raw_detections = yolo_detections or []
+    yolo_payload = {
+        "action": decision_action,
+        "detections": [_yolo_detection_to_dict(d) for d in raw_detections],
+        "latency_ms": yolo_latency_ms,
+    }
+
+    if decision_action == "drop":
+        return {
+            "decision": "drop",
+            "yolo": yolo_payload,
+            "events": [],
+            "person_count": 0,
+            "people": [],
+            "vehicles": [],
+            "scene_summary": "No relevant objects detected locally (YOLO gate) — Gemini was not called.",
+            "_meta": {
+                "latency_ms": yolo_latency_ms,
+                "prompt_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "gemini_called": False,
+            },
+        }
+
+    if decision_action == "fastpath":
+        events = [_yolo_event_to_dict(e) for e in decision.events]
+        person_count = sum(1 for e in decision.events if e.event_type == "person")
+        return {
+            "decision": "fastpath",
+            "yolo": yolo_payload,
+            "events": events,
+            "person_count": person_count,
+            "people": [],
+            "vehicles": [],
+            "scene_summary": "High-confidence local detection (YOLO fast path) — Gemini was not called.",
+            "_meta": {
+                "latency_ms": yolo_latency_ms,
+                "prompt_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "gemini_called": False,
+            },
+        }
+
+    # escalate (mid-confidence, no strong local match, or YOLO unavailable/
+    # errored) — call Gemini exactly like /analyze, restricted to the same
+    # fixed event set the YOLO gate evaluates.
+    try:
+        from google import genai
+        from google.genai.types import GenerateContentConfig, Part
+    except ImportError:
+        raise HTTPException(status_code=500, detail="google-genai not installed on backend")
+
+    prompt = build_yolo_test_prompt(body.scene_type)
+    gemini_started = time.monotonic()
+
+    try:
+        client = genai.Client(api_key=settings.gemini_api_key)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                Part.from_text(text=prompt),
+                Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+            ],
+            config=GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+
+        gemini_latency_ms = int((time.monotonic() - gemini_started) * 1000)
+
+        usage_dict = {}
+        if response.usage_metadata:
+            usage_dict = {
+                "prompt_token_count": response.usage_metadata.prompt_token_count or 0,
+                "candidates_token_count": response.usage_metadata.candidates_token_count or 0,
+                "total_token_count": response.usage_metadata.total_token_count or 0,
+                "thoughts_token_count": response.usage_metadata.thoughts_token_count or 0,
+            }
+
+        await _record_usage(user, usage_dict, gemini_latency_ms, "analyze-yolo-gemini", "gemini-2.5-flash", db)
+
+        try:
+            data = json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Malformed JSON from Gemini (analyze-yolo-gemini)")
+            data = {
+                "events": [], "person_count": 0, "people": [], "vehicles": [],
+                "scene_summary": "Failed to parse AI response",
+            }
+
+        data["decision"] = "escalate"
+        data["yolo"] = yolo_payload
+        data["_meta"] = {
+            "latency_ms": yolo_latency_ms + gemini_latency_ms,
+            "prompt_tokens": usage_dict.get("prompt_token_count", 0),
+            "output_tokens": usage_dict.get("candidates_token_count", 0),
+            "total_tokens": usage_dict.get("total_token_count", 0),
+            "cost_usd": _estimate_cost(
+                usage_dict.get("prompt_token_count", 0),
+                usage_dict.get("candidates_token_count", 0),
+            ),
+            "gemini_called": True,
+        }
+        return data
+
+    except Exception as e:
+        logger.error(f"Gemini call failed (analyze-yolo-gemini): {e}")
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
+
+
 CHAT_SYSTEM = """You are a surveillance assistant chatting with a security operator who is watching a live camera feed.
 
 You have access to:

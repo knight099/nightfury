@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_enabled: bool = True
 
+    # YOLO local-detection test agent (Test AI page only — person/vehicle/animal,
+    # no zones/intrusion support here). Mirrors worker/config.py's yolo_* settings.
+    yolo_test_model_path: str = "models/yolov8n.onnx"
+    yolo_test_input_size: int = 640
+    yolo_test_fastpath_confidence: float = 0.75
+    yolo_test_escalate_floor: float = 0.35
+
     class Config:
         env_file = ".env"
         extra = "ignore"
