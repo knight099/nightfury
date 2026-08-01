@@ -16,6 +16,10 @@ from event_packager import EventPackager
 from gcs_uploader import GCSUploader
 from api_client import ApiClient
 from yolo_detector import YoloDetector, decide
+from pose_detector import PoseDetector
+from person_tracker import PersonTracker
+from sequence_engine import SequenceState, advance, build_detected_event
+from yolo_detector import point_in_polygon
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,12 @@ class CameraWorker:
         )
         self.gemini = gemini
         self.yolo = YoloDetector()
+        self.pose = PoseDetector()
+        self.tracker = PersonTracker(
+            iou_threshold=config.track_iou_threshold,
+            ttl_seconds=config.track_ttl_seconds,
+            sequence_state_factory=SequenceState,
+        )
         self.gcs = GCSUploader()
         self.api = ApiClient()
         self.packager = EventPackager(self.gcs, self.api)
@@ -54,6 +64,8 @@ class CameraWorker:
         self.yolo_calls = 0
         self.yolo_gated_frames = 0
         self.yolo_fastpath_events = 0
+        self.pose_calls = 0
+        self.sequence_events = 0
         self.last_frame_time: float = 0
         self.errors: list[str] = []
 
@@ -103,6 +115,25 @@ class CameraWorker:
                 # Frame sampling decision
                 if not self.frame_sampler.should_sample(frame, has_motion):
                     continue
+
+                if config.pose_enabled and self.pose.available and self.camera_config.step_sequence:
+                    self.pose_calls += 1
+                    poses = await asyncio.to_thread(self.pose.detect, frame)
+                    if poses is not None:
+                        tracks = self.tracker.update(poses, time.time())
+                        for track in tracks:
+                            zone_name = self._zone_for_bbox(track.pose.bbox)
+                            seq_event = advance(
+                                track.sequence_state, self.camera_config.step_sequence,
+                                zone_name, track.pose.label, time.time(),
+                            )
+                            if seq_event is not None:
+                                self.sequence_events += 1
+                                event = build_detected_event(seq_event, track.pose.bbox)
+                                self.events_detected += 1
+                                await self.packager.package_and_send(
+                                    event, frame, self.ring_buffer, self.camera_config
+                                )
 
                 if config.yolo_enabled and self.yolo.available:
                     self.yolo_calls += 1
@@ -191,6 +222,14 @@ class CameraWorker:
                     f"[{self.camera_config.name}] latest-frame loop error: {e}"
                 )
 
+    def _zone_for_bbox(self, bbox):
+        cx = (bbox.x1 + bbox.x2) / 2
+        cy = (bbox.y1 + bbox.y2) / 2
+        for zone in self.camera_config.detection_zones:
+            if point_in_polygon(cx, cy, zone.get("points", [])):
+                return zone.get("name")
+        return None
+
     def _encode_webp(self, frame: np.ndarray) -> bytes | None:
         ok, buf = cv2.imencode(
             ".webp", frame, [cv2.IMWRITE_WEBP_QUALITY, config.latest_frame_quality]
@@ -208,6 +247,8 @@ class CameraWorker:
             "yolo_calls": self.yolo_calls,
             "yolo_gated_frames": self.yolo_gated_frames,
             "yolo_fastpath_events": self.yolo_fastpath_events,
+            "pose_calls": self.pose_calls,
+            "sequence_events": self.sequence_events,
             "buffer_duration": self.ring_buffer.duration_seconds,
             "sampler_state": self.frame_sampler.state,
             "errors": self.errors[-5:],
