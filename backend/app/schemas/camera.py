@@ -74,3 +74,21 @@ class WebRTCOfferRequest(BaseModel):
 
 class WebRTCAnswerResponse(BaseModel):
     answer: str
+
+
+class CompileSequenceRequest(BaseModel):
+    conversation_id: uuid.UUID | None = None
+    message: str
+
+
+class CompileSequenceResponse(BaseModel):
+    conversation_id: uuid.UUID
+    type: str  # "question" | "draft"
+    message: str | None = None
+    steps: list[dict] = []
+    alert_rule: dict | None = None
+    warnings: list[str] = []
+
+
+class CompileSequenceConversationResponse(BaseModel):
+    messages: list[dict]

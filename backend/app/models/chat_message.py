@@ -23,6 +23,12 @@ class ChatMessage(Base):
             "user_id",
             "created_at",
         ),
+        Index(
+            "ix_chat_messages_camera_purpose_created",
+            "camera_id",
+            "purpose",
+            "created_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -56,3 +62,4 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    purpose: Mapped[str] = mapped_column(String(30), nullable=False, server_default="qa")

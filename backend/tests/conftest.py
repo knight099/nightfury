@@ -16,7 +16,36 @@ from app.models.base import Base
 from app.models.organization import Organization
 from app.models.user import User
 
-TEST_DB_URL = settings.database_url
+def _resolve_test_db_url() -> str:
+    """Require an explicit, dedicated test database — never fall back to
+    settings.database_url. This fixture file runs create_all/drop_all
+    around every single test; pointed at the real database (e.g. because
+    a .env got copied into a new environment without a distinct
+    TEST_DATABASE_URL) this drops every application table with no way
+    back short of a database-level restore.
+
+    2026-08-01 incident: exactly this happened — TEST_DB_URL was
+    `settings.database_url` with no guard, a copied .env pointed both at
+    the same real Postgres instance, and the test suite's teardown
+    dropped every table in it.
+    """
+    url = settings.test_database_url
+    if not url:
+        raise RuntimeError(
+            "TEST_DATABASE_URL is not set. The test suite must never run against "
+            "settings.database_url (the real database) — set TEST_DATABASE_URL in "
+            "your .env to a separate, disposable database before running tests."
+        )
+    if url == settings.database_url:
+        raise RuntimeError(
+            "TEST_DATABASE_URL is identical to DATABASE_URL. Refusing to run "
+            "destructive create_all/drop_all against what may be the real database — "
+            "point TEST_DATABASE_URL at a separate, disposable database."
+        )
+    return url
+
+
+TEST_DB_URL = _resolve_test_db_url()
 
 
 @pytest.fixture(scope="session")

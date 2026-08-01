@@ -9,10 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.models.camera import Camera
 from app.models.event import Event
 from app.models.user import User
-from app.schemas.event import EventResponse, EventStatsResponse, FeedbackRequest
+from app.schemas.event import (
+    EventResponse,
+    EventStatsCameraBreakdown,
+    EventStatsResponse,
+    EventStatsTimeBucket,
+    FeedbackRequest,
+)
 from app.services.gcs import fetch_gcs_object, sign_gcs_url
+
+MAX_CAMERA_BREAKDOWN_ROWS = 10
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -150,12 +159,66 @@ async def event_stats(
                 rejected += 1
 
     total = len(events)
+
+    # Time-bucketed volume: hourly for the 24h view, daily otherwise — matches
+    # the same period options the endpoint already accepts.
+    bucket_by_day = period != "24h"
+    buckets: dict[datetime, dict[str, int]] = {}
+    for e in events:
+        ts = e.timestamp
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if bucket_by_day:
+            key = ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            key = ts.replace(minute=0, second=0, microsecond=0)
+        bucket = buckets.setdefault(key, {})
+        bucket[e.severity] = bucket.get(e.severity, 0) + 1
+    time_series = [
+        EventStatsTimeBucket(
+            bucket=key,
+            count=sum(sev_counts.values()),
+            by_severity=sev_counts,
+        )
+        for key, sev_counts in sorted(buckets.items())
+    ]
+
+    # Per-camera breakdown, folding anything past the top N into "Other" —
+    # never a generated per-camera hue/row past a bounded count.
+    camera_counts: dict[uuid.UUID, int] = {}
+    for e in events:
+        camera_counts[e.camera_id] = camera_counts.get(e.camera_id, 0) + 1
+
+    camera_names: dict[uuid.UUID, str] = {}
+    if camera_counts:
+        cam_result = await db.execute(
+            select(Camera.id, Camera.name).where(Camera.id.in_(camera_counts.keys()))
+        )
+        camera_names = {row[0]: row[1] for row in cam_result.all()}
+
+    ranked = sorted(camera_counts.items(), key=lambda kv: kv[1], reverse=True)
+    by_camera = [
+        EventStatsCameraBreakdown(
+            camera_id=cam_id,
+            camera_name=camera_names.get(cam_id, "Unknown camera"),
+            count=count,
+        )
+        for cam_id, count in ranked[:MAX_CAMERA_BREAKDOWN_ROWS]
+    ]
+    if len(ranked) > MAX_CAMERA_BREAKDOWN_ROWS:
+        other_count = sum(count for _, count in ranked[MAX_CAMERA_BREAKDOWN_ROWS:])
+        by_camera.append(
+            EventStatsCameraBreakdown(camera_id=None, camera_name="Other", count=other_count)
+        )
+
     return EventStatsResponse(
         total_events=total,
         by_type=by_type,
         by_severity=by_severity,
         feedback_rate=reviewed / total if total else 0,
         false_positive_rate=rejected / reviewed if reviewed else 0,
+        time_series=time_series,
+        by_camera=by_camera,
     )
 
 

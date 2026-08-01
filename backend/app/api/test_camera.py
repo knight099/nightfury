@@ -1,4 +1,5 @@
 """Test endpoint — analyze a single frame from device camera via Gemini Vision."""
+import asyncio
 import base64
 import json
 import logging
@@ -10,12 +11,16 @@ from pydantic import BaseModel
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import cv2
+import numpy as np
+
 from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.redis import get_redis
 from app.models.ai_usage import AIUsage
 from app.models.user import User
+from app.services.local_detection import analyze_frame_locally, pose_detector, yolo_detector
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +176,72 @@ class ChatRequest(BaseModel):
 async def get_event_catalog(user: User = Depends(get_current_user)):
     """Return the catalog of supported events grouped by scene type."""
     return {"catalog": EVENT_CATALOG}
+
+
+class AnalyzeLocalRequest(BaseModel):
+    image_base64: str
+
+
+@router.get("/local-detection-status")
+async def local_detection_status(user: User = Depends(get_current_user)):
+    """Whether the local YOLO/pose models loaded, and the fastpath threshold in use."""
+    return {
+        "yolo_available": yolo_detector.available,
+        "pose_available": pose_detector.available,
+        "fastpath_confidence": settings.local_detection_fastpath_confidence,
+        "local_detection_enabled": settings.local_detection_enabled,
+    }
+
+
+@router.post("/analyze-local")
+async def analyze_local(
+    body: AnalyzeLocalRequest,
+    user: User = Depends(get_current_user),
+):
+    """Run local YOLO + pose ONNX inference on a frame, mirroring the worker's
+    confidence-gated pipeline: max detection confidence >= threshold means
+    this frame would be handled locally (fastpath, no Gemini call needed);
+    otherwise it would escalate. This endpoint never calls Gemini itself —
+    the frontend decides whether to follow up with /analyze based on the
+    returned decision."""
+    require_role(user, "operator")
+
+    try:
+        image_data = base64.b64decode(body.image_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+    arr = np.frombuffer(image_data, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Could not decode image")
+
+    started = time.monotonic()
+    result = await asyncio.to_thread(analyze_frame_locally, frame)
+    latency_ms = int((time.monotonic() - started) * 1000)
+
+    return {
+        "decision": result.decision,
+        "max_confidence": result.max_confidence,
+        "fastpath_threshold": settings.local_detection_fastpath_confidence,
+        "inference_error": result.inference_error,
+        "latency_ms": latency_ms,
+        "detections": [
+            {
+                "coco_class": d.coco_class,
+                "confidence": d.confidence,
+                "bbox": {"x1": d.bbox.x1, "y1": d.bbox.y1, "x2": d.bbox.x2, "y2": d.bbox.y2},
+            }
+            for d in result.detections
+        ],
+        "poses": [
+            {
+                "bbox": {"x1": p.bbox.x1, "y1": p.bbox.y1, "x2": p.bbox.x2, "y2": p.bbox.y2},
+                "label": p.label,
+            }
+            for p in result.poses
+        ],
+    }
 
 
 # Pricing for gemini-2.5-flash (per 1M tokens, USD) — adjust if pricing changes

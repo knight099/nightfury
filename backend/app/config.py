@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
 
+    # Must point at a dedicated, disposable database — never the same as
+    # database_url. The test suite runs create_all/drop_all around every
+    # test; pointed at the real database this destroys production/dev data.
+    test_database_url: str = ""
+
     redis_url: str = "redis://localhost:6379/0"
 
     gcs_bucket: str = "nightwatch-events"
@@ -75,6 +80,18 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_enabled: bool = True
+
+    # Local ONNX detection for the Test AI page — runs before deciding
+    # whether to escalate to Gemini. Same models/approach as worker/, kept
+    # as a separate copy since backend and worker are separate deployable
+    # services with no shared package today.
+    local_detection_enabled: bool = True
+    yolo_model_path: str = "models/yolov8n.onnx"
+    pose_model_path: str = "models/yolov8n-pose.onnx"
+    yolo_input_size: int = 640
+    pose_input_size: int = 640
+    pose_keypoint_confidence: float = 0.3
+    local_detection_fastpath_confidence: float = 0.80
 
     class Config:
         env_file = ".env"

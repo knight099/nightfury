@@ -46,9 +46,23 @@ class FeedbackRequest(BaseModel):
     label: str | None = None
 
 
+class EventStatsTimeBucket(BaseModel):
+    bucket: datetime
+    count: int
+    by_severity: dict[str, int]
+
+
+class EventStatsCameraBreakdown(BaseModel):
+    camera_id: uuid.UUID | None
+    camera_name: str
+    count: int
+
+
 class EventStatsResponse(BaseModel):
     total_events: int
     by_type: dict[str, int]
     by_severity: dict[str, int]
     feedback_rate: float
     false_positive_rate: float
+    time_series: list[EventStatsTimeBucket] = []
+    by_camera: list[EventStatsCameraBreakdown] = []

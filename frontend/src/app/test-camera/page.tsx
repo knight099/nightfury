@@ -103,6 +103,36 @@ interface EventLogEntry {
   result: AnalysisResult;
   audioResult?: AudioResult;
   combinedResult?: CombinedResult;
+  source?: "local" | "gemini";
+  escalationReason?: string;
+}
+
+interface LocalDetection {
+  coco_class: string;
+  confidence: number;
+  bbox: { x1: number; y1: number; x2: number; y2: number };
+}
+
+interface LocalPose {
+  bbox: { x1: number; y1: number; x2: number; y2: number };
+  label: string;
+}
+
+interface LocalAnalysisResult {
+  decision: "fastpath" | "escalate";
+  max_confidence: number;
+  fastpath_threshold: number;
+  inference_error: boolean;
+  latency_ms: number;
+  detections: LocalDetection[];
+  poses: LocalPose[];
+}
+
+interface LocalDetectionStatus {
+  yolo_available: boolean;
+  pose_available: boolean;
+  fastpath_confidence: number;
+  local_detection_enabled: boolean;
 }
 
 const SCENE_TYPES = [
@@ -160,9 +190,74 @@ export default function TestCameraPage() {
   const [combinedCapturing, setCombinedCapturing] = useState(false);
   const [combinedCountdown, setCombinedCountdown] = useState(0);
 
+  // Local YOLO/pose detection — behind-the-scenes pipeline visibility
+  const [localStatus, setLocalStatus] = useState<LocalDetectionStatus | null>(null);
+  const [localResult, setLocalResult] = useState<LocalAnalysisResult | null>(null);
+  const [pipelineStats, setPipelineStats] = useState({
+    framesAnalyzedLocally: 0,
+    framesFastpath: 0,
+    framesEscalated: 0,
+    audioClipsSent: 0,
+    audioSecondsSent: 0,
+  });
+
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    api.request<LocalDetectionStatus>("/api/test-camera/local-detection-status")
+      .then(setLocalStatus)
+      .catch(() => setLocalStatus(null));
+  }, []);
+
+  const runLocalAnalysis = useCallback(async (base64: string): Promise<LocalAnalysisResult | null> => {
+    try {
+      const data = await api.request<LocalAnalysisResult>("/api/test-camera/analyze-local", {
+        method: "POST",
+        body: JSON.stringify({ image_base64: base64 }),
+      });
+      setLocalResult(data);
+      setPipelineStats((s) => ({
+        ...s,
+        framesAnalyzedLocally: s.framesAnalyzedLocally + 1,
+        framesFastpath: s.framesFastpath + (data.decision === "fastpath" && !data.inference_error ? 1 : 0),
+        framesEscalated: s.framesEscalated + (data.decision === "escalate" || data.inference_error ? 1 : 0),
+      }));
+      return data;
+    } catch {
+      // Local detection unavailable (models not loaded, or a transient error) —
+      // fail toward Gemini, same fail-soft principle as the worker.
+      setLocalResult(null);
+      return null;
+    }
+  }, []);
+
+  const buildLocalFastpathResult = useCallback((local: LocalAnalysisResult): AnalysisResult => {
+    const relevant = local.detections.filter((d) => d.confidence >= local.fastpath_threshold);
+    // Group by class, one event per class — mirrors the worker's own
+    // _build_events grouping (yolo_detector.py), not one event per detection,
+    // so multiple people/vehicles of the same class render as a single event
+    // with multiple boxes instead of colliding/duplicated event entries.
+    const byClass = new Map<string, LocalDetection[]>();
+    for (const d of relevant) {
+      const list = byClass.get(d.coco_class) ?? [];
+      list.push(d);
+      byClass.set(d.coco_class, list);
+    }
+    const events: DetectedEvent[] = Array.from(byClass.entries()).map(([coco_class, group]) => ({
+      event_type: coco_class,
+      confidence: Math.max(...group.map((d) => d.confidence)),
+      severity: "low",
+      description: `${group.length} ${coco_class} detected locally by YOLO (top confidence ${(Math.max(...group.map((d) => d.confidence)) * 100).toFixed(0)}%) — no Gemini call`,
+      bounding_boxes: group.map((d) => ({ x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2, label: coco_class })),
+    }));
+    return {
+      events,
+      person_count: local.detections.filter((d) => d.coco_class === "person").length,
+      scene_summary: `Handled locally — ${local.detections.length} object(s) detected, top confidence ${(local.max_confidence * 100).toFixed(0)}% ≥ ${(local.fastpath_threshold * 100).toFixed(0)}% fastpath threshold. No Gemini call was made for this frame.`,
+    };
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -234,19 +329,30 @@ export default function TestCameraPage() {
     setAnalyzing(true);
     setError("");
     try {
+      const local = await runLocalAnalysis(base64);
+      if (local && local.decision === "fastpath" && !local.inference_error) {
+        const asFrame = buildLocalFastpathResult(local);
+        setResult(asFrame);
+        setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: asFrame, source: "local" as const }].slice(-10));
+        return;
+      }
+
+      const escalationReason = local
+        ? `Escalated to Gemini — local YOLO confidence ${(local.max_confidence * 100).toFixed(0)}% below the ${(local.fastpath_threshold * 100).toFixed(0)}% fastpath threshold`
+        : undefined;
       const data = await api.request<AnalysisResult>("/api/test-camera/analyze", {
         method: "POST",
         body: JSON.stringify(buildPayload(base64)),
       });
       setResult(data);
-      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data }].slice(-10));
+      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data, source: "gemini" as const, escalationReason }].slice(-10));
       if (data._meta) addSessionStats(data._meta);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
-  }, [analyzing, captureFrame, buildPayload, addSessionStats]);
+  }, [analyzing, captureFrame, buildPayload, addSessionStats, runLocalAnalysis, buildLocalFastpathResult]);
 
   // Capture frame + 4s audio → single Gemini call → unified events
   const captureWithAudio = useCallback(async () => {
@@ -257,6 +363,20 @@ export default function TestCameraPage() {
     const imageBase64 = captureFrame();
     if (!imageBase64) { setCombinedCapturing(false); return; }
     lastFrameRef.current = imageBase64;
+
+    // Check locally first — a fastpath means we never need the microphone or
+    // a Gemini call at all for this capture.
+    const local = await runLocalAnalysis(imageBase64);
+    if (local && local.decision === "fastpath" && !local.inference_error) {
+      const asFrame = buildLocalFastpathResult(local);
+      setResult(asFrame);
+      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: asFrame, source: "local" as const }].slice(-10));
+      setCombinedCapturing(false);
+      return;
+    }
+    const escalationReason = local
+      ? `Escalated to Gemini — local YOLO confidence ${(local.max_confidence * 100).toFixed(0)}% below the ${(local.fastpath_threshold * 100).toFixed(0)}% fastpath threshold`
+      : undefined;
 
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -322,10 +442,13 @@ export default function TestCameraPage() {
         };
         setResult(asFrame);
         if (data._meta) addSessionStats(data._meta);
+        setPipelineStats((s) => ({ ...s, audioClipsSent: s.audioClipsSent + 1, audioSecondsSent: s.audioSecondsSent + 4 }));
         setEventLog((prev) => [...prev, {
           captured_at: new Date().toISOString(),
           result: asFrame,
           combinedResult: data,
+          source: "gemini" as const,
+          escalationReason,
         }].slice(-10));
       } else {
         // No mic — plain frame analysis
@@ -335,7 +458,7 @@ export default function TestCameraPage() {
         });
         setResult(data);
         if (data._meta) addSessionStats(data._meta);
-        setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data }].slice(-10));
+        setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data, source: "gemini" as const, escalationReason }].slice(-10));
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Combined capture failed");
@@ -343,7 +466,7 @@ export default function TestCameraPage() {
       setCombinedCapturing(false);
       setCombinedCountdown(0);
     }
-  }, [combinedCapturing, streaming, captureFrame, buildPayload, sceneType, useContext, sceneContext, addSessionStats]);
+  }, [combinedCapturing, streaming, captureFrame, buildPayload, sceneType, useContext, sceneContext, addSessionStats, runLocalAnalysis, buildLocalFastpathResult]);
 
   const toggleAuto = useCallback(() => {
     if (autoMode) {
@@ -526,9 +649,9 @@ export default function TestCameraPage() {
             )}
             {result && result.events.length > 0 && (
               <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1280 720">
-                {result.events.flatMap((e) =>
+                {result.events.flatMap((e, eventIdx) =>
                   e.bounding_boxes.map((bb, i) => (
-                    <g key={`${e.event_type}-${i}`}>
+                    <g key={`${eventIdx}-${e.event_type}-${i}`}>
                       <rect
                         x={bb.x1} y={bb.y1} width={bb.x2 - bb.x1} height={bb.y2 - bb.y1}
                         fill="none"
@@ -541,6 +664,32 @@ export default function TestCameraPage() {
                     </g>
                   ))
                 )}
+              </svg>
+            )}
+            {localResult && (localResult.detections.length > 0 || localResult.poses.length > 0) && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1280 720">
+                {localResult.detections.map((d, i) => (
+                  <g key={`local-det-${i}`}>
+                    <rect
+                      x={d.bbox.x1} y={d.bbox.y1} width={d.bbox.x2 - d.bbox.x1} height={d.bbox.y2 - d.bbox.y1}
+                      fill="none" stroke="#A479E2" strokeWidth="2" strokeDasharray="4 3"
+                    />
+                    <text x={d.bbox.x1} y={d.bbox.y2 + 14} fill="#A479E2" fontSize="12" fontFamily="monospace">
+                      YOLO: {d.coco_class} ({(d.confidence * 100).toFixed(0)}%)
+                    </text>
+                  </g>
+                ))}
+                {localResult.poses.map((p, i) => (
+                  <g key={`local-pose-${i}`}>
+                    <rect
+                      x={p.bbox.x1} y={p.bbox.y1} width={p.bbox.x2 - p.bbox.x1} height={p.bbox.y2 - p.bbox.y1}
+                      fill="none" stroke="#4ADE80" strokeWidth="2" strokeDasharray="2 2"
+                    />
+                    <text x={p.bbox.x1} y={p.bbox.y1 - 4} fill="#4ADE80" fontSize="12" fontFamily="monospace">
+                      pose: {p.label}
+                    </text>
+                  </g>
+                ))}
               </svg>
             )}
           </div>
@@ -575,6 +724,8 @@ export default function TestCameraPage() {
               <div className="text-[#666666] text-[10px]">Gemini 2.5 Flash</div>
             </div>
           </div>
+
+          <BehindTheScenesPanel localStatus={localStatus} pipelineStats={pipelineStats} localResult={localResult} />
         </div>
 
         {/* Chat & event log panel */}
@@ -694,6 +845,16 @@ function EventLogItem({ entry, severityColor }: { entry: EventLogEntry; severity
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-[#666666] font-mono">{time}</span>
+          {entry.source === "local" && (
+            <span className="text-[10px] text-[#A479E2] border border-[#A479E2]/20 rounded px-1" title="Handled by local YOLO — no Gemini call">
+              YOLO (local)
+            </span>
+          )}
+          {entry.source === "gemini" && entry.escalationReason && (
+            <span className="text-[10px] text-[#FBBF24] border border-[#FBBF24]/20 rounded px-1" title={entry.escalationReason}>
+              fell back to Gemini
+            </span>
+          )}
           {c && <span className="text-[10px] text-[#1E90FF] border border-[#1E90FF]/20 rounded px-1 flex items-center gap-0.5"><Camera size={9} /><Mic size={9} /> combined</span>}
           {a && !c && <span className="text-[10px] text-[#FBBF24] border border-[#FBBF24]/20 rounded px-1 flex items-center gap-0.5"><Mic size={9} /> audio</span>}
         </div>
@@ -705,6 +866,9 @@ function EventLogItem({ entry, severityColor }: { entry: EventLogEntry; severity
       </div>
 
       <p className="text-xs text-[#A3A3A3] leading-tight">{c ? c.scene_summary : r.scene_summary}</p>
+      {entry.escalationReason && (
+        <p className="text-[10px] text-[#FBBF24] italic">{entry.escalationReason}</p>
+      )}
 
       {/* Combined unified events */}
       {c && c.events.length > 0 && (
@@ -774,6 +938,61 @@ function StatBox({ label, value, color = "#F5F5F5" }: { label: string; value: nu
     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2 text-center">
       <div className="text-xs text-[#666666] uppercase">{label}</div>
       <div className="text-lg font-bold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+function BehindTheScenesPanel({
+  localStatus,
+  pipelineStats,
+  localResult,
+}: {
+  localStatus: LocalDetectionStatus | null;
+  pipelineStats: { framesAnalyzedLocally: number; framesFastpath: number; framesEscalated: number; audioClipsSent: number; audioSecondsSent: number };
+  localResult: LocalAnalysisResult | null;
+}) {
+  const modelsReady = !!localStatus?.yolo_available;
+  return (
+    <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2 text-xs space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[#666666] uppercase text-[10px]">Behind the scenes</span>
+        <span className={`text-[10px] flex items-center gap-1 ${modelsReady ? "text-[#4ADE80]" : "text-[#EF4444]"}`}>
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: modelsReady ? "#4ADE80" : "#EF4444" }} />
+          {modelsReady ? "Local YOLO + Pose ready" : "Local models unavailable"}
+        </span>
+      </div>
+
+      {localResult && (
+        <div className="text-[#A3A3A3]">
+          Last frame:{" "}
+          <span className={localResult.decision === "fastpath" ? "text-[#4ADE80]" : "text-[#FBBF24]"}>
+            {localResult.decision === "fastpath" ? "handled locally" : "escalated to Gemini"}
+          </span>{" "}
+          — {(localResult.max_confidence * 100).toFixed(0)}% vs {(localResult.fastpath_threshold * 100).toFixed(0)}% threshold
+          · {localResult.latency_ms}ms local inference
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-1.5 pt-1">
+        <div className="text-center">
+          <div className="text-[#F5F5F5] font-bold tabular-nums">{pipelineStats.framesAnalyzedLocally}</div>
+          <div className="text-[9px] text-[#666666] uppercase">Frames checked</div>
+        </div>
+        <div className="text-center">
+          <div className="text-[#4ADE80] font-bold tabular-nums">{pipelineStats.framesFastpath}</div>
+          <div className="text-[9px] text-[#666666] uppercase">Handled locally</div>
+        </div>
+        <div className="text-center">
+          <div className="text-[#FBBF24] font-bold tabular-nums">{pipelineStats.framesEscalated}</div>
+          <div className="text-[9px] text-[#666666] uppercase">Sent to Gemini</div>
+        </div>
+      </div>
+
+      <div className="text-[#666666] text-[10px] pt-1 border-t border-[#2A2A2A]">
+        Video sent to Gemini: <span className="text-[#A3A3A3]">{pipelineStats.framesEscalated} frame{pipelineStats.framesEscalated === 1 ? "" : "s"}</span> (one still image per escalated capture — no continuous video is streamed)
+        <br />
+        Audio sent to Gemini: <span className="text-[#A3A3A3]">{pipelineStats.audioSecondsSent}s across {pipelineStats.audioClipsSent} clip{pipelineStats.audioClipsSent === 1 ? "" : "s"}</span>
+      </div>
     </div>
   );
 }

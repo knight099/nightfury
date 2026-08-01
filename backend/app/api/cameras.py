@@ -1,4 +1,6 @@
 import base64
+import json
+import logging
 import secrets
 import uuid
 
@@ -11,11 +13,16 @@ from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.camera import Camera
+from app.models.chat_message import ChatMessage
+from app.models.organization import Organization
 from app.models.site import Site
 from app.models.user import User
 from app.schemas.camera import (
     CameraCreatedResponse,
     CameraResponse,
+    CompileSequenceConversationResponse,
+    CompileSequenceRequest,
+    CompileSequenceResponse,
     CreateCameraRequest,
     LatestFrameResponse,
     StreamUrlResponse,
@@ -23,13 +30,22 @@ from app.schemas.camera import (
     WebRTCAnswerResponse,
     WebRTCOfferRequest,
 )
+from app.services.digest.spend_tracker import SpendTracker
 from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
+from app.services.sequence_compiler.deps import get_sequence_compiler_client, get_sequence_compiler_spend_tracker
+from app.services.sequence_compiler.gemini_client import SequenceCompilerClient
 from app.services.soft_delete_service import soft_delete_service
 from app.services.stream_token import sign_stream_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
 RTMP_INGEST_BASE = "rtmp://ingest.nightwatch.ai/live"
+
+SEQUENCE_COMPILER_PURPOSE = "sequence_compiler"
+SEQUENCE_COMPILER_MAX_TURNS = 5
+APPROX_COST_PER_CALL_USD = 0.03
 
 VALID_POSE_LABELS = {"standing", "bending", "crouching", "sitting", "reaching", None}
 
@@ -298,3 +314,176 @@ async def camera_webrtc_offer(
 
     data = resp.json()
     return WebRTCAnswerResponse(answer=data["answer"])
+
+
+async def _load_sequence_compiler_history(
+    db: AsyncSession, org_id: uuid.UUID, camera_id: uuid.UUID, conversation_id: uuid.UUID
+) -> list[ChatMessage]:
+    q = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.org_id == org_id,
+            ChatMessage.camera_id == camera_id,
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.purpose == SEQUENCE_COMPILER_PURPOSE,
+        )
+        .order_by(ChatMessage.created_at)
+    )
+    return list((await db.execute(q)).scalars().all())
+
+
+def _persist_sequence_compiler_message(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    camera_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    role: str,
+    content: str,
+) -> None:
+    db.add(
+        ChatMessage(
+            org_id=org_id,
+            user_id=user_id,
+            camera_id=camera_id,
+            conversation_id=conversation_id,
+            purpose=SEQUENCE_COMPILER_PURPOSE,
+            role=role,
+            content=content,
+        )
+    )
+
+
+@router.post("/{camera_id}/compile-sequence", response_model=CompileSequenceResponse)
+async def compile_sequence(
+    camera_id: uuid.UUID,
+    body: CompileSequenceRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    compiler: SequenceCompilerClient = Depends(get_sequence_compiler_client),
+    spend_tracker: SpendTracker = Depends(get_sequence_compiler_spend_tracker),
+):
+    """Conversational NL -> step_sequence draft compiler.
+
+    Never persists a step_sequence or alert_rule directly — always returns a
+    draft for the existing manual editor/validation to review before Save.
+    Conversation history lives in chat_messages (purpose='sequence_compiler'),
+    not in the request body, so each turn only sends the new message.
+    """
+    require_role(user, "admin")
+
+    q = _camera_query(user).where(Camera.id == camera_id)
+    result = await db.execute(q)
+    camera = result.scalar_one_or_none()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    org_result = await db.execute(select(Organization).where(Organization.id == camera.org_id))
+    organization = org_result.scalar_one_or_none()
+
+    conversation_id = body.conversation_id or uuid.uuid4()
+    history = (
+        await _load_sequence_compiler_history(db, camera.org_id, camera_id, conversation_id)
+        if body.conversation_id
+        else []
+    )
+
+    user_turn_count = sum(1 for m in history if m.role == "user") + 1
+    if user_turn_count > SEQUENCE_COMPILER_MAX_TURNS:
+        raise HTTPException(status_code=400, detail="Conversation too long — start a new one.")
+    force_draft = user_turn_count == SEQUENCE_COMPILER_MAX_TURNS
+
+    _persist_sequence_compiler_message(
+        db, camera.org_id, user.id, camera_id, conversation_id, "user", body.message
+    )
+    await db.flush()
+
+    zone_names = [z.get("name") for z in (camera.detection_zones or [])]
+    whatsapp_configured = bool(organization and organization.whatsapp_alert_contacts)
+
+    charged = await spend_tracker.try_charge(camera.org_id, APPROX_COST_PER_CALL_USD)
+    if not charged:
+        reply = "Daily AI budget reached — build this manually, or try again tomorrow."
+        _persist_sequence_compiler_message(
+            db, camera.org_id, user.id, camera_id, conversation_id, "assistant", reply
+        )
+        return CompileSequenceResponse(conversation_id=conversation_id, type="question", message=reply)
+
+    full_history = [{"role": m.role, "content": m.content} for m in history]
+    full_history.append({"role": "user", "content": body.message})
+
+    try:
+        parsed = await compiler.turn(full_history, zone_names, whatsapp_configured, force_draft)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"expected a JSON object, got {type(parsed).__name__}")
+    except Exception as e:
+        logger.warning(f"sequence compiler failed for camera {camera_id}: {e}")
+        reply = "AI generation failed — try rephrasing, or build this manually."
+        _persist_sequence_compiler_message(
+            db, camera.org_id, user.id, camera_id, conversation_id, "assistant", reply
+        )
+        return CompileSequenceResponse(conversation_id=conversation_id, type="question", message=reply)
+
+    if parsed.get("type") == "question":
+        reply = parsed.get("message", "Could you clarify that?")
+        _persist_sequence_compiler_message(
+            db, camera.org_id, user.id, camera_id, conversation_id, "assistant", reply
+        )
+        return CompileSequenceResponse(conversation_id=conversation_id, type="question", message=reply)
+
+    steps = parsed.get("steps", [])
+    if not isinstance(steps, list):
+        steps = []
+    alert_rule = parsed.get("alert_rule")
+    if not isinstance(alert_rule, dict):
+        alert_rule = None
+    warnings: list[str] = []
+
+    if alert_rule and "whatsapp" in alert_rule.get("notify_channels", []):
+        contacts = (organization.whatsapp_alert_contacts if organization else None) or []
+        if contacts:
+            alert_rule["notify_contacts"] = [{"type": "whatsapp", "value": c} for c in contacts]
+        else:
+            warnings.append(
+                "No WhatsApp contacts configured for this org — add one in Settings before saving, "
+                "or this channel won't notify anyone."
+            )
+    if alert_rule and "email" in alert_rule.get("notify_channels", []):
+        warnings.append("Add a destination email address before saving.")
+    if alert_rule and "webhook" in alert_rule.get("notify_channels", []):
+        warnings.append("Add the destination URL for this webhook before saving.")
+    if alert_rule:
+        alert_rule["cameras"] = [str(camera_id)]
+
+    try:
+        _validate_step_sequence(steps, camera.detection_zones)
+    except HTTPException as e:
+        warnings.append(f"Generated draft has an issue: {e.detail}. Review and fix before saving.")
+
+    _persist_sequence_compiler_message(
+        db, camera.org_id, user.id, camera_id, conversation_id, "assistant", json.dumps(parsed)
+    )
+
+    return CompileSequenceResponse(
+        conversation_id=conversation_id, type="draft", steps=steps, alert_rule=alert_rule, warnings=warnings
+    )
+
+
+@router.get("/{camera_id}/compile-sequence/{conversation_id}", response_model=CompileSequenceConversationResponse)
+async def get_compile_sequence_conversation(
+    camera_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, "admin")
+    q = _camera_query(user).where(Camera.id == camera_id)
+    result = await db.execute(q)
+    camera = result.scalar_one_or_none()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    history = await _load_sequence_compiler_history(db, camera.org_id, camera_id, conversation_id)
+    return CompileSequenceConversationResponse(
+        messages=[{"role": m.role, "content": m.content} for m in history]
+    )

@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useEventsSocket } from "@/lib/useEventsSocket";
 import { useChatContextStore } from "@/lib/chatContext";
 import { useChatPanelState } from "@/lib/chatPanelState";
+import { useChatSeedStore } from "@/lib/chatSeed";
 import { useAuthStore } from "@/lib/store";
 import type { ChatMessage, Event, Camera } from "@/types";
 
@@ -72,6 +73,15 @@ export function ChatSidePanel() {
 
   useEffect(() => {
     if (!collapsed) setUnread(0);
+  }, [collapsed]);
+
+  useEffect(() => {
+    if (collapsed) return;
+    const seed = useChatSeedStore.getState().consume();
+    if (!seed) return;
+    setTab("ask");
+    setMessages(seed.seedMessages);
+    setCurrentConversationId(seed.conversationId);
   }, [collapsed]);
 
   const { data: camerasData } = useQuery({

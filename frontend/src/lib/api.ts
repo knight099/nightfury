@@ -3,6 +3,8 @@ import type {
   AlertRule,
   Camera,
   ChatMessage,
+  CompileSequenceMessage,
+  CompileSequenceResponse,
   ConversationSummary,
   Digest,
   DigestListResponse,
@@ -117,6 +119,19 @@ class ApiClient {
 
   async deleteCamera(id: string) {
     return this.request<void>(`/api/cameras/${id}`, { method: "DELETE" });
+  }
+
+  async compileSequence(cameraId: string, conversationId: string | null, message: string) {
+    return this.request<CompileSequenceResponse>(`/api/cameras/${cameraId}/compile-sequence`, {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: conversationId, message }),
+    });
+  }
+
+  async getCompileSequenceConversation(cameraId: string, conversationId: string) {
+    return this.request<{ messages: CompileSequenceMessage[] }>(
+      `/api/cameras/${cameraId}/compile-sequence/${conversationId}`
+    );
   }
 
   async restoreCamera(id: string) {

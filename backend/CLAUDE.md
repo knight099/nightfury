@@ -82,8 +82,9 @@
 - All service-layer functions should catch and handle their own exceptions
 
 ### Testing
-- Tests use `pytest-asyncio` with testcontainers for real Postgres
-- Override `get_db` dependency in tests — never hit production DB
+- Tests use `pytest-asyncio` against a real Postgres database at `TEST_DATABASE_URL` — **not testcontainers** (despite older docs claiming otherwise; verify against `tests/conftest.py` before trusting doc text on this)
+- `TEST_DATABASE_URL` is **required** and must be a separate, disposable database from `DATABASE_URL` — `tests/conftest.py` hard-fails at collection time if it's unset or identical to `DATABASE_URL`, because the `db_session` fixture runs `create_all`/`drop_all` around every single test
+- **Never copy a `.env` file between environments/worktrees without checking `TEST_DATABASE_URL` is still a distinct, throwaway database** — a copied `.env` missing this distinction caused a 2026-08-01 incident that dropped every table in a real database
 - Mock external services (Gupshup, SendGrid, GCS) in tests
 - Test auth flows: valid login, wrong password, lockout, session expiry
 

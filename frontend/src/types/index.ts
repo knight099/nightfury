@@ -117,12 +117,26 @@ export interface NotifyContact {
   value: string;
 }
 
+export interface EventStatsTimeBucket {
+  bucket: string;
+  count: number;
+  by_severity: Record<string, number>;
+}
+
+export interface EventStatsCameraBreakdown {
+  camera_id: string | null;
+  camera_name: string;
+  count: number;
+}
+
 export interface EventStats {
   total_events: number;
   by_type: Record<string, number>;
   by_severity: Record<string, number>;
   feedback_rate: number;
   false_positive_rate: number;
+  time_series: EventStatsTimeBucket[];
+  by_camera: EventStatsCameraBreakdown[];
 }
 
 export interface PaginatedResponse<T> {
@@ -173,6 +187,30 @@ export interface DigestRequest {
   end: string;
   camera_ids?: string[];
   site_id?: string;
+}
+
+export interface AlertRuleDraft {
+  name: string;
+  event_types: string[];
+  min_severity: string;
+  notify_channels: ("whatsapp" | "email" | "webhook")[];
+  notify_contacts?: NotifyContact[];
+  webhook_url?: string | null;
+  cameras: string[];
+}
+
+export interface CompileSequenceMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface CompileSequenceResponse {
+  conversation_id: string;
+  type: "question" | "draft";
+  message?: string | null;
+  steps: StepSequenceStep[];
+  alert_rule: AlertRuleDraft | null;
+  warnings: string[];
 }
 
 export interface ChatMessage {

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,7 @@ class Camera(Base, TimestampMixin, SoftDeleteMixin):
     enabled_events: Mapped[list] = mapped_column(ARRAY(String), default=list)
     detection_zones: Mapped[list] = mapped_column(JSONB, default=list)
     step_sequence: Mapped[list] = mapped_column(JSONB, default=list)
+    reid_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sensitivity: Mapped[str] = mapped_column(String(10), default="medium")  # low, medium, high
 
     status: Mapped[str] = mapped_column(String(20), default="offline")  # online, offline, error
