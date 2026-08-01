@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Square, Trash2, VideoOff } from "lucide-react";
+import { ArrowLeft, ListOrdered, Square, Trash2, VideoOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -13,6 +13,7 @@ import { useAuthStore } from "@/lib/store";
 import { useEventsSocket } from "@/lib/useEventsSocket";
 import { useChatContextStore } from "@/lib/chatContext";
 import { ZonesEditor } from "@/components/cameras/ZonesEditor";
+import { SequenceEditor } from "@/components/cameras/SequenceEditor";
 import { WebRTCPlayer } from "@/components/cameras/WebRTCPlayer";
 import type { Camera, Event, PaginatedResponse } from "@/types";
 
@@ -50,6 +51,7 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
   }, [id, setCameraContext]);
 
   const [showZones, setShowZones] = useState(false);
+  const [showSequence, setShowSequence] = useState(false);
   const [webrtcFailed, setWebrtcFailed] = useState(true);
   const [streamFailed, setStreamFailed] = useState(false);
 
@@ -158,6 +160,12 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md text-xs hover:text-[#F5F5F5] hover:border-[#1E90FF] transition-colors"
             >
               <Square size={12} /> Edit Zones
+            </button>
+            <button
+              onClick={() => setShowSequence(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1A1A1A] text-[#A3A3A3] border border-[#2A2A2A] rounded-md text-xs hover:text-[#F5F5F5] hover:border-[#1E90FF] transition-colors"
+            >
+              <ListOrdered size={12} /> Edit Sequence
             </button>
             <button
               onClick={() => {
@@ -308,6 +316,10 @@ export default function CameraDetailPage({ params }: { params: Promise<{ id: str
 
       {showZones && (
         <ZonesEditor camera={camera} onClose={() => setShowZones(false)} />
+      )}
+
+      {showSequence && (
+        <SequenceEditor camera={camera} onClose={() => setShowSequence(false)} />
       )}
     </div>
   );
