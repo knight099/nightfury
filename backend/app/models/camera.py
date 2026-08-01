@@ -25,6 +25,7 @@ class Camera(Base, TimestampMixin, SoftDeleteMixin):
 
     enabled_events: Mapped[list] = mapped_column(ARRAY(String), default=list)
     detection_zones: Mapped[list] = mapped_column(JSONB, default=list)
+    step_sequence: Mapped[list] = mapped_column(JSONB, default=list)
     sensitivity: Mapped[str] = mapped_column(String(10), default="medium")  # low, medium, high
 
     status: Mapped[str] = mapped_column(String(20), default="offline")  # online, offline, error

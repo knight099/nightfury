@@ -37,6 +37,7 @@ export interface Camera {
   stream_key: string | null;
   enabled_events: string[];
   detection_zones: DetectionZone[];
+  step_sequence: StepSequenceStep[];
   sensitivity: "low" | "medium" | "high";
   status: "online" | "offline" | "error";
   last_frame_at: string | null;
@@ -50,6 +51,13 @@ export interface Camera {
 export interface DetectionZone {
   name: string;
   points: number[][];
+}
+
+export interface StepSequenceStep {
+  name: string;
+  zone: string;
+  pose: "standing" | "bending" | "crouching" | "sitting" | "reaching" | null;
+  max_seconds: number | null;
 }
 
 export interface Event {

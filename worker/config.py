@@ -43,6 +43,14 @@ class Config(BaseSettings):
     yolo_fastpath_confidence: float = 0.75
     yolo_escalate_floor: float = 0.35
 
+    # Pose detection + step-sequence tracking
+    pose_enabled: bool = True
+    pose_model_path: str = "models/yolov8n-pose.onnx"
+    pose_input_size: int = 640
+    pose_keypoint_confidence: float = 0.3
+    track_iou_threshold: float = 0.3
+    track_ttl_seconds: float = 5.0
+
     # Worker
     worker_id: str = "worker-local"
     max_cameras: int = 12

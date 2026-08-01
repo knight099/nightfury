@@ -31,6 +31,28 @@ router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
 RTMP_INGEST_BASE = "rtmp://ingest.nightwatch.ai/live"
 
+VALID_POSE_LABELS = {"standing", "bending", "crouching", "sitting", "reaching", None}
+
+
+def _validate_step_sequence(step_sequence: list, detection_zones: list) -> None:
+    if not step_sequence:
+        return
+    zone_names = {z.get("name") for z in detection_zones}
+    for i, step in enumerate(step_sequence):
+        if not step.get("name"):
+            raise HTTPException(status_code=400, detail=f"step_sequence[{i}] is missing a name")
+        zone = step.get("zone")
+        if zone not in zone_names:
+            raise HTTPException(
+                status_code=400,
+                detail=f"step_sequence[{i}] references unknown zone '{zone}' — must match an existing detection_zones name",
+            )
+        if step.get("pose") not in VALID_POSE_LABELS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"step_sequence[{i}] has invalid pose '{step.get('pose')}' — must be one of {sorted(p for p in VALID_POSE_LABELS if p)} or null",
+            )
+
 
 def _camera_query(user: User, include_deleted: bool = False):
     q = select(Camera)
@@ -84,6 +106,8 @@ async def create_camera(
     if body.ingest_mode in ("rtmp_push", "srt_push"):
         stream_key = f"nw_cam_{secrets.token_hex(16)}"
 
+    _validate_step_sequence(body.step_sequence, body.detection_zones)
+
     camera = Camera(
         org_id=org_id,
         site_id=body.site_id,
@@ -93,6 +117,7 @@ async def create_camera(
         stream_key=stream_key,
         enabled_events=body.enabled_events,
         detection_zones=body.detection_zones,
+        step_sequence=body.step_sequence,
         sensitivity=body.sensitivity,
         idle_fps=body.idle_fps,
         active_fps=body.active_fps,
@@ -136,7 +161,12 @@ async def update_camera(
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    effective_zones = updates.get("detection_zones", camera.detection_zones)
+    effective_sequence = updates.get("step_sequence", camera.step_sequence)
+    _validate_step_sequence(effective_sequence, effective_zones)
+
+    for field, value in updates.items():
         setattr(camera, field, value)
     await db.flush()
     return CameraResponse.model_validate(camera)

@@ -67,6 +67,14 @@
 - Model file lives at `models/yolov8n.onnx` (path configurable via `YOLO_MODEL_PATH`); if missing or fails to load, `YoloDetector.available` is `False` and every frame escalates to Gemini — fail-soft, never crashes the worker
 - To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"`, then move the resulting `yolov8n.onnx` into `models/`
 
+### Pose-Based Step-Sequence Tracking
+- For cameras with a non-empty `step_sequence` configured, a local YOLOv8-pose ONNX model (`pose_detector.py`, CPU-only via onnxruntime) runs after the YOLO gate stage, independent of its drop/emit/escalate decision
+- Detected people are tracked frame-to-frame with a greedy IoU tracker (`person_tracker.py`, no re-identification — a lost track starts a fresh sequence on reappearance)
+- Each tracked person's (zone, pose label) is checked against the camera's ordered `step_sequence` by `sequence_engine.py`; skipping ahead, stalling past a step's `max_seconds`, or completing all steps emits a `step_skipped` / `step_timeout` / `sequence_completed` event directly — no Gemini call
+- Pose labels are geometric heuristics on 17 COCO keypoints: `standing`, `bending`, `crouching`, `sitting`, `reaching`, `unknown` (see `classify_pose` in `pose_detector.py`)
+- Model file lives at `models/yolov8n-pose.onnx` (path configurable via `POSE_MODEL_PATH`); if missing or fails to load, `PoseDetector.available` is `False` and the stage is skipped entirely — fail-soft, never crashes the worker
+- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n-pose.pt').export(format='onnx')"`, then move the resulting `yolov8n-pose.onnx` into `models/`
+
 ### Frame Sampling
 - Two states: IDLE (1 fps to AI) and ACTIVE (5 fps to AI)
 - Transition: motion detected → ACTIVE; no motion for 10s → IDLE
