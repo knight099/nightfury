@@ -102,6 +102,7 @@ async def list_assignments(
             stream_key=camera.stream_key,
             enabled_events=list(camera.enabled_events or []),
             detection_zones=list(camera.detection_zones or []),
+            step_sequence=list(camera.step_sequence or []),
             sensitivity=camera.sensitivity,
             idle_fps=camera.idle_fps,
             active_fps=camera.active_fps,

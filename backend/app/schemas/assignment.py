@@ -15,6 +15,7 @@ class Assignment(BaseModel):
     stream_key: str | None = None
     enabled_events: list[str]
     detection_zones: list[dict]
+    step_sequence: list[dict] = []
     sensitivity: str
     idle_fps: float
     active_fps: float

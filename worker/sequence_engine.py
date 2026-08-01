@@ -60,7 +60,11 @@ def advance(state: SequenceState, step_sequence: list, zone_name, pose_label: st
             )
         return None
 
-    later_zones = {s.get("zone") for s in step_sequence[state.current_step_index + 1:]}
+    current_zone = current_step.get("zone")
+    later_zones = {
+        s.get("zone") for s in step_sequence[state.current_step_index + 1:]
+        if s.get("zone") != current_zone
+    }
     if zone_name is not None and zone_name in later_zones:
         state.completed = True
         return SequenceEvent(
