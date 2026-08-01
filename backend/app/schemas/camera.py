@@ -11,6 +11,7 @@ class CreateCameraRequest(BaseModel):
     rtsp_url: str | None = None
     enabled_events: list[str] = ["person", "vehicle", "intrusion"]
     detection_zones: list[dict] = []
+    step_sequence: list[dict] = []
     sensitivity: str = "medium"
     idle_fps: float = 1.0
     active_fps: float = 5.0
@@ -22,6 +23,7 @@ class UpdateCameraRequest(BaseModel):
     rtsp_url: str | None = None
     enabled_events: list[str] | None = None
     detection_zones: list[dict] | None = None
+    step_sequence: list[dict] | None = None
     sensitivity: str | None = None
     idle_fps: float | None = None
     active_fps: float | None = None
@@ -36,6 +38,7 @@ class CameraResponse(BaseModel):
     stream_key: str | None
     enabled_events: list[str]
     detection_zones: list[dict]
+    step_sequence: list[dict]
     sensitivity: str
     status: str
     last_frame_at: datetime | None
