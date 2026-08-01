@@ -1,7 +1,10 @@
+import cv2
 import logging
 import math
+import numpy as np
 from dataclasses import dataclass, field
 
+from config import config
 from models import BoundingBox
 
 logger = logging.getLogger(__name__)
@@ -133,3 +136,113 @@ def classify_pose(keypoints, min_confidence: float = 0.3) -> str:
             return "standing"
 
     return "unknown"
+
+
+POSE_NMS_SCORE_THRESHOLD = 0.25
+POSE_NMS_IOU_THRESHOLD = 0.45
+NUM_KEYPOINTS = 17
+
+
+class PoseDetector:
+    """ONNX-based YOLOv8-pose inference, CPU-only, fail-soft if the model is unavailable."""
+
+    def __init__(self):
+        self.available = False
+        self.session = None
+        self.input_name = None
+        try:
+            import onnxruntime as ort
+            self.session = ort.InferenceSession(
+                config.pose_model_path, providers=["CPUExecutionProvider"]
+            )
+            self.input_name = self.session.get_inputs()[0].name
+            self.available = True
+            logger.info(f"Pose model loaded from {config.pose_model_path}")
+        except Exception as e:
+            logger.error(
+                f"Pose model failed to load ({e}); pose/sequence tracking disabled "
+                "for cameras with a step_sequence configured"
+            )
+
+    def detect(self, frame):
+        if not self.available:
+            return []
+        size = config.pose_input_size
+        letterboxed, scale, pad_x, pad_y = self._letterbox(frame, size)
+        blob = self._preprocess(letterboxed)
+
+        try:
+            outputs = self.session.run(None, {self.input_name: blob})
+        except Exception as e:
+            logger.warning(f"Pose inference failed: {e}")
+            return None
+
+        return self._postprocess(outputs[0], frame.shape, scale, pad_x, pad_y)
+
+    def _letterbox(self, frame, size: int):
+        h, w = frame.shape[:2]
+        scale = min(size / h, size / w)
+        nh, nw = int(round(h * scale)), int(round(w * scale))
+        resized = cv2.resize(frame, (nw, nh))
+        pad_x = (size - nw) // 2
+        pad_y = (size - nh) // 2
+        canvas = np.full((size, size, 3), 114, dtype=np.uint8)
+        canvas[pad_y:pad_y + nh, pad_x:pad_x + nw] = resized
+        return canvas, scale, pad_x, pad_y
+
+    def _preprocess(self, letterboxed):
+        rgb = cv2.cvtColor(letterboxed, cv2.COLOR_BGR2RGB)
+        normalized = rgb.astype(np.float32) / 255.0
+        chw = normalized.transpose(2, 0, 1)
+        return np.expand_dims(chw, axis=0)
+
+    def _postprocess(self, output, frame_shape, scale, pad_x, pad_y):
+        # output shape: (1, 56, N) -> (N, 56): 4 bbox (cx,cy,w,h) + 1 person-conf + 17*3 keypoints
+        preds = output[0].transpose(1, 0)
+        boxes_cxcywh = preds[:, :4]
+        confidences = preds[:, 4]
+        kpts_raw = preds[:, 5:].reshape(-1, NUM_KEYPOINTS, 3)
+
+        keep = confidences >= POSE_NMS_SCORE_THRESHOLD
+        boxes_cxcywh = boxes_cxcywh[keep]
+        confidences = confidences[keep]
+        kpts_raw = kpts_raw[keep]
+
+        if len(boxes_cxcywh) == 0:
+            return []
+
+        x1 = boxes_cxcywh[:, 0] - boxes_cxcywh[:, 2] / 2
+        y1 = boxes_cxcywh[:, 1] - boxes_cxcywh[:, 3] / 2
+        nms_boxes = np.stack([x1, y1, boxes_cxcywh[:, 2], boxes_cxcywh[:, 3]], axis=1)
+
+        indices = cv2.dnn.NMSBoxes(
+            nms_boxes.tolist(), confidences.tolist(),
+            POSE_NMS_SCORE_THRESHOLD, POSE_NMS_IOU_THRESHOLD,
+        )
+        if len(indices) == 0:
+            return []
+        indices = np.array(indices).flatten()
+
+        frame_h, frame_w = frame_shape[0], frame_shape[1]
+
+        def rescale_point(x, y):
+            fx = max(0, min(frame_w, (x - pad_x) / scale))
+            fy = max(0, min(frame_h, (y - pad_y) / scale))
+            return fx, fy
+
+        poses = []
+        for i in indices:
+            bx1, by1, bw, bh = nms_boxes[i]
+            bx2, by2 = bx1 + bw, by1 + bh
+            fx1, fy1 = rescale_point(bx1, by1)
+            fx2, fy2 = rescale_point(bx2, by2)
+
+            keypoints = []
+            for kx, ky, kc in kpts_raw[i]:
+                rx, ry = rescale_point(kx, ky)
+                keypoints.append((float(rx), float(ry), float(kc)))
+
+            bbox = BoundingBox(x1=int(fx1), y1=int(fy1), x2=int(fx2), y2=int(fy2), label="person")
+            label = classify_pose(keypoints, config.pose_keypoint_confidence)
+            poses.append(PersonPose(bbox=bbox, keypoints=keypoints, label=label))
+        return poses
