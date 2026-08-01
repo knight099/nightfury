@@ -115,6 +115,7 @@ interface LocalDetection {
 
 interface LocalPose {
   bbox: { x1: number; y1: number; x2: number; y2: number };
+  keypoints: { x: number; y: number; confidence: number }[];
   label: string;
 }
 
@@ -144,6 +145,43 @@ const SCENE_TYPES = [
 ];
 
 const EMPTY_CONTEXT: SceneContext = { center: "", left: "", right: "", top: "", bottom: "", background: "" };
+
+const POSE_KEYPOINT_CONFIDENCE = 0.25;
+const POSE_SKELETON: [number, number][] = [
+  [5, 6],
+  [5, 7],
+  [7, 9],
+  [6, 8],
+  [8, 10],
+  [5, 11],
+  [6, 12],
+  [11, 12],
+  [11, 13],
+  [13, 15],
+  [12, 14],
+  [14, 16],
+  [0, 5],
+  [0, 6],
+];
+
+function bboxOverlapRatio(a: LocalDetection["bbox"], b: LocalPose["bbox"]): number {
+  const x1 = Math.max(a.x1, b.x1);
+  const y1 = Math.max(a.y1, b.y1);
+  const x2 = Math.min(a.x2, b.x2);
+  const y2 = Math.min(a.y2, b.y2);
+  const overlap = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const area = Math.max(1, (a.x2 - a.x1) * (a.y2 - a.y1));
+  return overlap / area;
+}
+
+function poseLabelForDetection(detection: LocalDetection, poses: LocalPose[]): string | null {
+  if (detection.coco_class !== "person") return null;
+  const best = poses
+    .map((pose) => ({ pose, overlap: bboxOverlapRatio(detection.bbox, pose.bbox) }))
+    .sort((a, b) => b.overlap - a.overlap)[0];
+  if (!best || best.overlap < 0.25 || best.pose.label === "unknown") return null;
+  return best.pose.label;
+}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -246,13 +284,20 @@ export default function TestCameraPage() {
       list.push(d);
       byClass.set(d.coco_class, list);
     }
-    const events: DetectedEvent[] = Array.from(byClass.entries()).map(([coco_class, group]) => ({
-      event_type: coco_class,
-      confidence: Math.max(...group.map((d) => d.confidence)),
-      severity: "low",
-      description: `${group.length} ${coco_class} detected locally by YOLO (top confidence ${(Math.max(...group.map((d) => d.confidence)) * 100).toFixed(0)}%) — no Gemini call`,
-      bounding_boxes: group.map((d) => ({ x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2, label: coco_class })),
-    }));
+    const events: DetectedEvent[] = Array.from(byClass.entries()).map(([coco_class, group]) => {
+      const topConfidence = Math.max(...group.map((d) => d.confidence));
+      const poseLabels = group
+        .map((d) => poseLabelForDetection(d, local.poses))
+        .filter((label): label is string => !!label);
+      const poseText = poseLabels.length > 0 ? `; pose: ${Array.from(new Set(poseLabels)).join(", ")}` : "";
+      return {
+        event_type: coco_class,
+        confidence: topConfidence,
+        severity: "low",
+        description: `${group.length} ${coco_class} detected locally by YOLO${poseText} (top confidence ${(topConfidence * 100).toFixed(0)}%) — no Gemini call`,
+        bounding_boxes: group.map((d) => ({ x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2, label: coco_class })),
+      };
+    });
     return {
       events,
       person_count: local.detections.filter((d) => d.coco_class === "person").length,
@@ -685,6 +730,37 @@ export default function TestCameraPage() {
                       x={p.bbox.x1} y={p.bbox.y1} width={p.bbox.x2 - p.bbox.x1} height={p.bbox.y2 - p.bbox.y1}
                       fill="none" stroke="#4ADE80" strokeWidth="2" strokeDasharray="2 2"
                     />
+                    {POSE_SKELETON.map(([from, to]) => {
+                      const a = p.keypoints?.[from];
+                      const b = p.keypoints?.[to];
+                      if (!a || !b || a.confidence < POSE_KEYPOINT_CONFIDENCE || b.confidence < POSE_KEYPOINT_CONFIDENCE) return null;
+                      return (
+                        <line
+                          key={`${from}-${to}`}
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          stroke="#4ADE80"
+                          strokeWidth="4"
+                          strokeLinecap="round"
+                          opacity="0.95"
+                        />
+                      );
+                    })}
+                    {p.keypoints?.map((kp, kpIdx) => (
+                      kp.confidence >= POSE_KEYPOINT_CONFIDENCE && (
+                        <circle
+                          key={kpIdx}
+                          cx={kp.x}
+                          cy={kp.y}
+                          r="4"
+                          fill="#111111"
+                          stroke="#BBF7D0"
+                          strokeWidth="2"
+                        />
+                      )
+                    ))}
                     <text x={p.bbox.x1} y={p.bbox.y1 - 4} fill="#4ADE80" fontSize="12" fontFamily="monospace">
                       pose: {p.label}
                     </text>
@@ -951,14 +1027,15 @@ function BehindTheScenesPanel({
   pipelineStats: { framesAnalyzedLocally: number; framesFastpath: number; framesEscalated: number; audioClipsSent: number; audioSecondsSent: number };
   localResult: LocalAnalysisResult | null;
 }) {
-  const modelsReady = !!localStatus?.yolo_available;
+  const modelsReady = !!localStatus?.yolo_available && !!localStatus?.pose_available;
+  const yoloOnly = !!localStatus?.yolo_available && !localStatus?.pose_available;
   return (
     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2 text-xs space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="text-[#666666] uppercase text-[10px]">Behind the scenes</span>
         <span className={`text-[10px] flex items-center gap-1 ${modelsReady ? "text-[#4ADE80]" : "text-[#EF4444]"}`}>
           <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: modelsReady ? "#4ADE80" : "#EF4444" }} />
-          {modelsReady ? "Local YOLO + Pose ready" : "Local models unavailable"}
+          {modelsReady ? "Local YOLO + Pose ready" : yoloOnly ? "YOLO ready, pose unavailable" : "Local models unavailable"}
         </span>
       </div>
 

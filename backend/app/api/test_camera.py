@@ -237,6 +237,10 @@ async def analyze_local(
         "poses": [
             {
                 "bbox": {"x1": p.bbox.x1, "y1": p.bbox.y1, "x2": p.bbox.x2, "y2": p.bbox.y2},
+                "keypoints": [
+                    {"x": x, "y": y, "confidence": confidence}
+                    for x, y, confidence in p.keypoints
+                ],
                 "label": p.label,
             }
             for p in result.poses
