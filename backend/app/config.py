@@ -73,6 +73,13 @@ class Settings(BaseSettings):
 
     # Digest subsystem
     gemini_api_key: str = ""
+    ollama_api_key: str = ""
+    ollama_base_url: str = "https://ollama.com"
+    # qwen3.5 is vision-capable but requires a paid Ollama Cloud plan; gemma4
+    # is tagged vision-capable but 500s on every image request as of this
+    # writing (verified against the real API, not a local bug). minimax-m3
+    # is the confirmed-working, account-accessible vision model.
+    ollama_test_camera_model: str = "minimax-m3"
     digest_daily_spend_cap_usd: float = 1.0
     digest_on_demand_per_user_hourly_limit: int = 10
     digest_max_events_per_window: int = 200

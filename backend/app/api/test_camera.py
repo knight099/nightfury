@@ -3,9 +3,11 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -147,6 +149,7 @@ class AnalyzeFrameRequest(BaseModel):
     image_base64: str
     scene_type: str = "general_security"
     scene_context: SceneContext | None = None
+    ai_provider: str = "gemini"
 
 
 class AnalyzeCombinedRequest(BaseModel):
@@ -256,6 +259,77 @@ PRICE_OUTPUT_PER_1M = 2.50
 
 def _estimate_cost(prompt_tokens: int, output_tokens: int) -> float:
     return (prompt_tokens * PRICE_INPUT_TEXT_PER_1M + output_tokens * PRICE_OUTPUT_PER_1M) / 1_000_000
+
+
+def _extract_json_object(text: str) -> dict:
+    """Parse a model response that should be JSON, allowing small wrappers."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        try:
+            return json.loads(fenced.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return json.loads(text[start:end + 1])
+    raise json.JSONDecodeError("No JSON object found", text, 0)
+
+
+def _normalize_ollama_model(model: str) -> str:
+    # Direct ollama.com API uses the base model name; the cloud suffix is for
+    # local Ollama routing.
+    return model.removesuffix(":cloud").removesuffix("-cloud")
+
+
+async def _analyze_frame_with_ollama(prompt: str, image_base64: str) -> tuple[dict, dict, int, str]:
+    if not settings.ollama_api_key:
+        raise HTTPException(status_code=500, detail="OLLAMA_API_KEY not configured")
+
+    model = _normalize_ollama_model(settings.ollama_test_camera_model)
+    started = time.monotonic()
+    payload = {
+        "model": model,
+        "stream": False,
+        "format": "json",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [image_base64],
+            }
+        ],
+        "options": {"temperature": 0.1},
+    }
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        response = await client.post(
+            f"{settings.ollama_base_url.rstrip('/')}/api/chat",
+            headers={"Authorization": f"Bearer {settings.ollama_api_key}"},
+            json=payload,
+        )
+        response.raise_for_status()
+        raw = response.json()
+
+    latency_ms = int((time.monotonic() - started) * 1000)
+    content = raw.get("message", {}).get("content", "")
+    if not content:
+        raise HTTPException(status_code=502, detail="Empty response from Ollama")
+
+    data = _extract_json_object(content)
+    usage_dict = {
+        "prompt_token_count": raw.get("prompt_eval_count", 0) or 0,
+        "candidates_token_count": raw.get("eval_count", 0) or 0,
+        "total_token_count": (raw.get("prompt_eval_count", 0) or 0) + (raw.get("eval_count", 0) or 0),
+        "thoughts_token_count": 0,
+    }
+    return data, usage_dict, latency_ms, model
 
 
 async def _record_usage(
@@ -667,58 +741,66 @@ async def analyze_frame(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Analyze a single base64-encoded frame via Gemini Vision."""
+    """Analyze a single base64-encoded frame via the selected Test Camera provider."""
     require_role(user, "operator")
-
-    try:
-        from google import genai
-        from google.genai.types import GenerateContentConfig, Part
-    except ImportError:
-        raise HTTPException(status_code=500, detail="google-genai not installed on backend")
 
     image_data = base64.b64decode(body.image_base64)
 
     scene_context_dict = body.scene_context.model_dump() if body.scene_context else None
     prompt = build_prompt(body.scene_type, scene_context_dict)
 
-    started = time.monotonic()
-
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
-        response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                Part.from_text(text=prompt),
-                Part.from_bytes(data=image_data, mime_type="image/jpeg"),
-            ],
-            config=GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,
-            ),
-        )
+        provider = body.ai_provider.lower().strip()
+        if provider == "ollama":
+            data, usage_dict, latency_ms, model = await _analyze_frame_with_ollama(prompt, body.image_base64)
+            operation = "analyze_ollama"
+        elif provider == "gemini":
+            try:
+                from google import genai
+                from google.genai.types import GenerateContentConfig, Part
+            except ImportError:
+                raise HTTPException(status_code=500, detail="google-genai not installed on backend")
 
-        latency_ms = int((time.monotonic() - started) * 1000)
+            started = time.monotonic()
+            client = genai.Client(api_key=settings.gemini_api_key)
+            response = await client.aio.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    Part.from_text(text=prompt),
+                    Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+                ],
+                config=GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                ),
+            )
 
-        usage_dict = {}
-        if response.usage_metadata:
-            usage_dict = {
-                "prompt_token_count": response.usage_metadata.prompt_token_count or 0,
-                "candidates_token_count": response.usage_metadata.candidates_token_count or 0,
-                "total_token_count": response.usage_metadata.total_token_count or 0,
-                "thoughts_token_count": response.usage_metadata.thoughts_token_count or 0,
-            }
+            latency_ms = int((time.monotonic() - started) * 1000)
 
-        await _record_usage(user, usage_dict, latency_ms, "analyze", "gemini-2.5-flash", db)
+            usage_dict = {}
+            if response.usage_metadata:
+                usage_dict = {
+                    "prompt_token_count": response.usage_metadata.prompt_token_count or 0,
+                    "candidates_token_count": response.usage_metadata.candidates_token_count or 0,
+                    "total_token_count": response.usage_metadata.total_token_count or 0,
+                    "thoughts_token_count": response.usage_metadata.thoughts_token_count or 0,
+                }
 
-        try:
-            data = json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Malformed JSON from Gemini")
-            data = {
-                "events": [], "person_count": 0, "people": [], "vehicles": [],
-                "objects": {"boxes": 0, "bags": 0, "pallets": 0, "packages": 0},
-                "scene_summary": "Failed to parse AI response",
-            }
+            model = "gemini-2.5-flash"
+            operation = "analyze"
+            try:
+                data = _extract_json_object(response.text or "")
+            except json.JSONDecodeError:
+                logger.warning("Malformed JSON from Gemini")
+                data = {
+                    "events": [], "person_count": 0, "people": [], "vehicles": [],
+                    "objects": {"boxes": 0, "bags": 0, "pallets": 0, "packages": 0},
+                    "scene_summary": "Failed to parse AI response",
+                }
+        else:
+            raise HTTPException(status_code=400, detail="ai_provider must be 'gemini' or 'ollama'")
+
+        await _record_usage(user, usage_dict, latency_ms, operation, model, db)
 
         data["_meta"] = {
             "latency_ms": latency_ms,
@@ -729,11 +811,21 @@ async def analyze_frame(
                 usage_dict.get("prompt_token_count", 0),
                 usage_dict.get("candidates_token_count", 0),
             ),
+            "model": model,
+            "provider": provider,
         }
         return data
 
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Ollama call failed: {e.response.status_code} {e.response.text[:500]}")
+        raise HTTPException(status_code=502, detail=f"Ollama analysis failed: {e.response.text}")
+    except json.JSONDecodeError:
+        logger.warning("Malformed JSON from Ollama")
+        raise HTTPException(status_code=502, detail="Ollama returned malformed JSON")
     except Exception as e:
-        logger.error(f"Gemini call failed: {e}")
+        logger.error(f"AI call failed: {e}")
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
 
 

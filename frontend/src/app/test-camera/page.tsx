@@ -34,6 +34,8 @@ interface AnalysisMeta {
   output_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  model?: string;
+  provider?: string;
 }
 
 interface AnalysisResult {
@@ -103,7 +105,7 @@ interface EventLogEntry {
   result: AnalysisResult;
   audioResult?: AudioResult;
   combinedResult?: CombinedResult;
-  source?: "local" | "gemini";
+  source?: "local" | "gemini" | "ollama";
   escalationReason?: string;
 }
 
@@ -143,6 +145,14 @@ const SCENE_TYPES = [
   { value: "office", label: "Office Space" },
   { value: "drone_aerial", label: "Drone / Aerial" },
 ];
+
+const AI_PROVIDERS = [
+  { value: "ollama", label: "Ollama (MiniMax M3)" },
+  { value: "gemini", label: "Gemini" },
+  { value: "local", label: "Local only" },
+] as const;
+
+type AIProvider = (typeof AI_PROVIDERS)[number]["value"];
 
 const EMPTY_CONTEXT: SceneContext = { center: "", left: "", right: "", top: "", bottom: "", background: "" };
 
@@ -206,6 +216,7 @@ export default function TestCameraPage() {
   const autoIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [sceneType, setSceneType] = useState("general_security");
+  const [aiProvider, setAiProvider] = useState<AIProvider>("ollama");
   const [useContext, setUseContext] = useState(false);
   const [contextEditing, setContextEditing] = useState(false);
   const [sceneContext, setSceneContext] = useState<SceneContext>(EMPTY_CONTEXT);
@@ -347,13 +358,13 @@ export default function TestCameraPage() {
   }, []);
 
   const buildPayload = useCallback((base64: string) => {
-    const payload: Record<string, unknown> = { image_base64: base64, scene_type: sceneType };
+    const payload: Record<string, unknown> = { image_base64: base64, scene_type: sceneType, ai_provider: aiProvider };
     if (useContext) {
       const filtered = Object.fromEntries(Object.entries(sceneContext).filter(([, v]) => v?.trim()));
       if (Object.keys(filtered).length > 0) payload.scene_context = filtered;
     }
     return payload;
-  }, [sceneType, useContext, sceneContext]);
+  }, [sceneType, aiProvider, useContext, sceneContext]);
 
   const addSessionStats = useCallback((meta: AnalysisMeta) => {
     setSessionStats((s) => ({
@@ -375,32 +386,43 @@ export default function TestCameraPage() {
     setError("");
     try {
       const local = await runLocalAnalysis(base64);
-      if (local && local.decision === "fastpath" && !local.inference_error) {
+      if (aiProvider === "local" && local && !local.inference_error) {
         const asFrame = buildLocalFastpathResult(local);
         setResult(asFrame);
         setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: asFrame, source: "local" as const }].slice(-10));
         return;
       }
+      if (aiProvider === "local") {
+        setError("Local analysis unavailable for this frame.");
+        return;
+      }
 
       const escalationReason = local
-        ? `Escalated to Gemini — local YOLO confidence ${(local.max_confidence * 100).toFixed(0)}% below the ${(local.fastpath_threshold * 100).toFixed(0)}% fastpath threshold`
+        ? `Sent to ${aiProvider === "ollama" ? "Ollama (MiniMax M3)" : "Gemini"} after local YOLO check (top local confidence ${(local.max_confidence * 100).toFixed(0)}%, fastpath threshold ${(local.fastpath_threshold * 100).toFixed(0)}%)`
         : undefined;
       const data = await api.request<AnalysisResult>("/api/test-camera/analyze", {
         method: "POST",
         body: JSON.stringify(buildPayload(base64)),
       });
+      if (local?.decision === "fastpath" && !local.inference_error) {
+        setPipelineStats((s) => ({ ...s, framesEscalated: s.framesEscalated + 1 }));
+      }
       setResult(data);
-      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data, source: "gemini" as const, escalationReason }].slice(-10));
+      setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: data, source: aiProvider === "ollama" ? "ollama" as const : "gemini" as const, escalationReason }].slice(-10));
       if (data._meta) addSessionStats(data._meta);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
-  }, [analyzing, captureFrame, buildPayload, addSessionStats, runLocalAnalysis, buildLocalFastpathResult]);
+  }, [analyzing, captureFrame, buildPayload, addSessionStats, runLocalAnalysis, buildLocalFastpathResult, aiProvider]);
 
   // Capture frame + 4s audio → single Gemini call → unified events
   const captureWithAudio = useCallback(async () => {
+    if (aiProvider === "ollama") {
+      await captureAndAnalyze();
+      return;
+    }
     if (combinedCapturing || !streaming) return;
     setCombinedCapturing(true);
     setError("");
@@ -412,10 +434,15 @@ export default function TestCameraPage() {
     // Check locally first — a fastpath means we never need the microphone or
     // a Gemini call at all for this capture.
     const local = await runLocalAnalysis(imageBase64);
-    if (local && local.decision === "fastpath" && !local.inference_error) {
+    if (aiProvider === "local" && local && !local.inference_error) {
       const asFrame = buildLocalFastpathResult(local);
       setResult(asFrame);
       setEventLog((prev) => [...prev, { captured_at: new Date().toISOString(), result: asFrame, source: "local" as const }].slice(-10));
+      setCombinedCapturing(false);
+      return;
+    }
+    if (aiProvider === "local") {
+      setError("Local analysis unavailable for this frame.");
       setCombinedCapturing(false);
       return;
     }
@@ -511,7 +538,7 @@ export default function TestCameraPage() {
       setCombinedCapturing(false);
       setCombinedCountdown(0);
     }
-  }, [combinedCapturing, streaming, captureFrame, buildPayload, sceneType, useContext, sceneContext, addSessionStats, runLocalAnalysis, buildLocalFastpathResult]);
+  }, [combinedCapturing, streaming, captureFrame, buildPayload, sceneType, useContext, sceneContext, addSessionStats, runLocalAnalysis, buildLocalFastpathResult, aiProvider, captureAndAnalyze]);
 
   const toggleAuto = useCallback(() => {
     if (autoMode) {
@@ -604,6 +631,16 @@ export default function TestCameraPage() {
           >
             {SCENE_TYPES.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <select
+            value={aiProvider}
+            onChange={(e) => setAiProvider(e.target.value as AIProvider)}
+            className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5] focus:outline-none focus:border-[#1E90FF]"
+            title="Frame analysis provider"
+          >
+            {AI_PROVIDERS.map((provider) => (
+              <option key={provider.value} value={provider.value}>{provider.label}</option>
             ))}
           </select>
           <button
@@ -797,11 +834,13 @@ export default function TestCameraPage() {
               <div className="text-[#A3A3A3]">
                 <span className="text-[#1E90FF] capitalize">{sceneType.replace(/_/g, " ")}</span> · Context <span className={useContext ? "text-[#4ADE80]" : "text-[#666666]"}>{useContext ? "ON" : "OFF"}</span>
               </div>
-              <div className="text-[#666666] text-[10px]">Gemini 2.5 Flash</div>
+              <div className="text-[#666666] text-[10px]">
+                {aiProvider === "ollama" ? "Ollama qwen3.5:cloud" : aiProvider === "gemini" ? "Gemini 2.5 Flash" : "Local YOLO + Pose"}
+              </div>
             </div>
           </div>
 
-          <BehindTheScenesPanel localStatus={localStatus} pipelineStats={pipelineStats} localResult={localResult} />
+          <BehindTheScenesPanel localStatus={localStatus} pipelineStats={pipelineStats} localResult={localResult} aiProvider={aiProvider} />
         </div>
 
         {/* Chat & event log panel */}
@@ -931,6 +970,11 @@ function EventLogItem({ entry, severityColor }: { entry: EventLogEntry; severity
               fell back to Gemini
             </span>
           )}
+          {entry.source === "ollama" && (
+            <span className="text-[10px] text-[#4ADE80] border border-[#4ADE80]/20 rounded px-1" title={entry.escalationReason || "Analyzed by Ollama Cloud"}>
+              Ollama (MiniMax M3)
+            </span>
+          )}
           {c && <span className="text-[10px] text-[#1E90FF] border border-[#1E90FF]/20 rounded px-1 flex items-center gap-0.5"><Camera size={9} /><Mic size={9} /> combined</span>}
           {a && !c && <span className="text-[10px] text-[#FBBF24] border border-[#FBBF24]/20 rounded px-1 flex items-center gap-0.5"><Mic size={9} /> audio</span>}
         </div>
@@ -1022,10 +1066,12 @@ function BehindTheScenesPanel({
   localStatus,
   pipelineStats,
   localResult,
+  aiProvider,
 }: {
   localStatus: LocalDetectionStatus | null;
   pipelineStats: { framesAnalyzedLocally: number; framesFastpath: number; framesEscalated: number; audioClipsSent: number; audioSecondsSent: number };
   localResult: LocalAnalysisResult | null;
+  aiProvider: AIProvider;
 }) {
   const modelsReady = !!localStatus?.yolo_available && !!localStatus?.pose_available;
   const yoloOnly = !!localStatus?.yolo_available && !localStatus?.pose_available;
@@ -1043,7 +1089,7 @@ function BehindTheScenesPanel({
         <div className="text-[#A3A3A3]">
           Last frame:{" "}
           <span className={localResult.decision === "fastpath" ? "text-[#4ADE80]" : "text-[#FBBF24]"}>
-            {localResult.decision === "fastpath" ? "handled locally" : "escalated to Gemini"}
+            {localResult.decision === "fastpath" && aiProvider === "local" ? "handled locally" : aiProvider === "ollama" ? "sent to Ollama" : "sent to Gemini"}
           </span>{" "}
           — {(localResult.max_confidence * 100).toFixed(0)}% vs {(localResult.fastpath_threshold * 100).toFixed(0)}% threshold
           · {localResult.latency_ms}ms local inference
@@ -1061,12 +1107,12 @@ function BehindTheScenesPanel({
         </div>
         <div className="text-center">
           <div className="text-[#FBBF24] font-bold tabular-nums">{pipelineStats.framesEscalated}</div>
-          <div className="text-[9px] text-[#666666] uppercase">Sent to Gemini</div>
+          <div className="text-[9px] text-[#666666] uppercase">{aiProvider === "ollama" ? "Sent to Ollama" : "Sent to Gemini"}</div>
         </div>
       </div>
 
       <div className="text-[#666666] text-[10px] pt-1 border-t border-[#2A2A2A]">
-        Video sent to Gemini: <span className="text-[#A3A3A3]">{pipelineStats.framesEscalated} frame{pipelineStats.framesEscalated === 1 ? "" : "s"}</span> (one still image per escalated capture — no continuous video is streamed)
+        Video sent to {aiProvider === "ollama" ? "Ollama" : "Gemini"}: <span className="text-[#A3A3A3]">{pipelineStats.framesEscalated} frame{pipelineStats.framesEscalated === 1 ? "" : "s"}</span> (one still image per cloud capture — no continuous video is streamed)
         <br />
         Audio sent to Gemini: <span className="text-[#A3A3A3]">{pipelineStats.audioSecondsSent}s across {pipelineStats.audioClipsSent} clip{pipelineStats.audioClipsSent === 1 ? "" : "s"}</span>
       </div>
