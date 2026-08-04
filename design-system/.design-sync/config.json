@@ -1,0 +1,22 @@
+{
+  "projectId": "bee50759-d680-4202-b762-0690851a27ee",
+  "shape": "package",
+  "pkg": "@nightwatch/design-system",
+  "buildCmd": "npm run build",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/styles.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "provider": { "component": "DsQueryProvider" },
+  "componentSrcMap": {
+    "DsQueryProvider": null
+  },
+  "overrides": {
+    "SequenceEditor": { "cardMode": "single", "viewport": "1000x700" },
+    "ZonesEditor": { "cardMode": "single", "viewport": "1200x800" },
+    "HelpWidget": { "cardMode": "single", "viewport": "420x640" },
+    "ChatSidePanel": { "cardMode": "single", "viewport": "380x700" },
+    "AppShell": { "cardMode": "single", "viewport": "1280x800" },
+    "Sidebar": { "cardMode": "single", "viewport": "260x700" },
+    "WebRTCPlayer": { "cardMode": "single", "viewport": "480x270" }
+  }
+}
