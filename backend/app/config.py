@@ -73,6 +73,12 @@ class Settings(BaseSettings):
 
     # Digest subsystem
     gemini_api_key: str = ""
+    # Vertex AI project/location used by the edge-box token broker
+    # (/api/edge/gemini-token) — mirrors worker/config.py's fields of the
+    # same name so edge boxes target the same Vertex AI project as the
+    # cloud worker.
+    gemini_vertex_project: str = "gebra-ai"
+    gemini_vertex_location: str = "us-central1"
     ollama_api_key: str = ""
     ollama_base_url: str = "https://ollama.com"
     # qwen3.5 is vision-capable but requires a paid Ollama Cloud plan; gemma4
