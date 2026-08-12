@@ -17,6 +17,7 @@ type Config struct {
 	AgentID        string
 	LocalUIAddr    string
 	StateDir       string
+	PipelineDir    string
 }
 
 // Load reads config from environment variables.
@@ -32,11 +33,12 @@ func Load() Config {
 		// PairCode is a short-lived, single-use code written by the downloaded
 		// installer. It lets first start happen without asking the customer to
 		// copy a pairing code into a local UI.
-		PairCode:       os.Getenv("AGENT_PAIR_CODE"),
-		OrgID:          os.Getenv("AGENT_ORG_ID"),
-		AgentID:        os.Getenv("AGENT_ID"),
-		LocalUIAddr:    envOr("AGENT_UI_ADDR", ":8765"),
-		StateDir:       envOr("AGENT_STATE_DIR", "/var/lib/nightwatch-agent"),
+		PairCode:    os.Getenv("AGENT_PAIR_CODE"),
+		OrgID:       os.Getenv("AGENT_ORG_ID"),
+		AgentID:     os.Getenv("AGENT_ID"),
+		LocalUIAddr: envOr("AGENT_UI_ADDR", ":8765"),
+		StateDir:    envOr("AGENT_STATE_DIR", "/var/lib/nightwatch-agent"),
+		PipelineDir: envOr("AGENT_PIPELINE_DIR", "/opt/nightwatch/agent/pipeline"),
 	}
 }
 

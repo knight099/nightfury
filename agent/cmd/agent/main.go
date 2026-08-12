@@ -30,6 +30,7 @@ import (
 	"github.com/nightwatch/agent/internal/discovery"
 	"github.com/nightwatch/agent/internal/localui"
 	"github.com/nightwatch/agent/internal/pairing"
+	"github.com/nightwatch/agent/internal/pipeline"
 	"github.com/nightwatch/agent/internal/store"
 	"github.com/nightwatch/agent/internal/supervisor"
 	"github.com/nightwatch/agent/internal/transport"
@@ -234,6 +235,21 @@ func main() {
 		Fallback: fallback,
 		Decider:  &transport.Decider{},
 	}
+
+	pipelineEnv := append(os.Environ(),
+		"NIGHTWATCH_DEVICE_TOKEN="+tok.DeviceToken,
+		"NIGHTWATCH_BACKEND_URL="+backend,
+	)
+	pipelineSup := pipeline.NewSupervisor(
+		filepath.Join(cfg.PipelineDir, ".venv", "bin", "python3"),
+		cfg.PipelineDir,
+		pipelineEnv,
+	)
+	go func() {
+		if err := pipelineSup.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("pipeline supervisor stopped: %v", err)
+		}
+	}()
 
 	if err := sup.Run(ctx); err != nil && err != context.Canceled {
 		slog.Error("supervisor exited", "err", err)
