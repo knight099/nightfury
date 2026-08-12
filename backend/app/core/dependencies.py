@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.sessions import session_manager
 from app.models.agent import Agent
 from app.models.user import User
-from app.services.device_token_service import DeviceTokenService
+from app.services.agent_auth import resolve_agent_by_token
 
 
 async def get_current_user(
@@ -63,17 +63,17 @@ async def get_agent_from_token(
 ) -> Agent:
     """Resolve a paired Agent from a Bearer device token.
 
-    Performs a linear scan + Argon2 verify across non-unpaired agents.
+    Uses the indexed ``device_token_id`` lookup key so this costs one Argon2
+    verify per request rather than one per agent row (see
+    app.services.agent_auth).
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
-    svc = DeviceTokenService()
-    result = await db.execute(select(Agent).where(Agent.status != "unpaired"))
-    for agent in result.scalars():
-        if svc.verify(token, agent.device_token_hash):
-            return agent
-    raise HTTPException(status_code=401, detail="invalid device token")
+    agent = await resolve_agent_by_token(db, token)
+    if agent is None:
+        raise HTTPException(status_code=401, detail="invalid device token")
+    return agent
 
 
 async def verify_worker_key(
@@ -95,19 +95,20 @@ async def verify_worker_key(
         request.state.internal_principal = {"kind": "worker"}
         return
 
-    # Path 2: Check Bearer token (edge box with paired Agent)
+    # Path 2: Check Bearer token (edge box with paired Agent).
+    # Indexed lookup key + single Argon2 verify — this is the hot ingestion
+    # path (/internal/events, /internal/heartbeat), so it must not scale
+    # with the number of paired agents.
     if authorization and authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ").strip()
-        svc = DeviceTokenService()
-        result = await db.execute(select(Agent).where(Agent.status != "unpaired"))
-        for agent in result.scalars():
-            if agent.device_token_hash and svc.verify(token, agent.device_token_hash):
-                request.state.internal_principal = {
-                    "kind": "agent",
-                    "agent_id": agent.id,
-                    "org_id": agent.org_id,
-                }
-                return
+        agent = await resolve_agent_by_token(db, token)
+        if agent is not None:
+            request.state.internal_principal = {
+                "kind": "agent",
+                "agent_id": agent.id,
+                "org_id": agent.org_id,
+            }
+            return
 
     # Neither path succeeded
     raise HTTPException(

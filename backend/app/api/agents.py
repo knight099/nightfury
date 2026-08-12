@@ -119,12 +119,13 @@ async def pair_agent(
             detail=str(exc),
         ) from exc
 
-    token, token_hash = DeviceTokenService.mint()
+    token, token_hash, token_id = DeviceTokenService.mint()
     agent = Agent(
         org_id=org_id,
         machine_id=payload.machine_id,
         pubkey=payload.pubkey,
         device_token_hash=token_hash,
+        device_token_id=token_id,
         version=payload.version,
         status="online",
         last_seen_at=datetime.now(timezone.utc),

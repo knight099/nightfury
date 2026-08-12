@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import verify_worker_key
-from app.models.agent import Agent
 from app.models.camera import Camera
 from app.models.event import Event
 from app.models.organization import Organization
@@ -18,7 +17,7 @@ from app.schemas.assignment import Assignment, AssignmentsResponse
 from app.schemas.event import CreateEventRequest, EventResponse
 from app.schemas.heartbeat import HeartbeatRequest
 from app.services.alert_service import alert_service
-from app.services.device_token_service import DeviceTokenService
+from app.services.agent_auth import resolve_agent_by_token
 from app.services.gcs import sign_gcs_url
 from app.ws.events import broadcast_to_org
 
@@ -152,11 +151,7 @@ async def verify_agent_token(
     body: VerifyTokenReq, db: AsyncSession = Depends(get_db)
 ) -> VerifyTokenResp:
     """Verify an agent's device token (called by relay)."""
-    svc = DeviceTokenService()
-    result = await db.execute(select(Agent).where(Agent.status != "unpaired"))
-    for agent in result.scalars():
-        if svc.verify(body.token, agent.device_token_hash):
-            return VerifyTokenResp(
-                org_id=str(agent.org_id), agent_id=str(agent.id)
-            )
-    raise HTTPException(status_code=401, detail="invalid device token")
+    agent = await resolve_agent_by_token(db, body.token)
+    if agent is None:
+        raise HTTPException(status_code=401, detail="invalid device token")
+    return VerifyTokenResp(org_id=str(agent.org_id), agent_id=str(agent.id))

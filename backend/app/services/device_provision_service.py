@@ -121,10 +121,11 @@ class DeviceProvisionService:
             )
         ).scalar_one_or_none()
 
-        token, token_hash = DeviceTokenService.mint()
+        token, token_hash, token_id = DeviceTokenService.mint()
         if existing_agent:
             existing_agent.pubkey = provision.pubkey
             existing_agent.device_token_hash = token_hash
+            existing_agent.device_token_id = token_id
             existing_agent.version = provision.version
             existing_agent.status = "online"
             existing_agent.last_seen_at = now
@@ -135,6 +136,7 @@ class DeviceProvisionService:
                 machine_id=provision.machine_id,
                 pubkey=provision.pubkey,
                 device_token_hash=token_hash,
+                device_token_id=token_id,
                 version=provision.version,
                 status="online",
                 last_seen_at=now,
