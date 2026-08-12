@@ -36,6 +36,33 @@ def _get_client():
     return _client
 
 
+def sign_gcs_upload_url(path: str, content_type: str, expires_in: int | None = None) -> str:
+    """Generate a V4 signed URL for PUTting an object to GCS.
+
+    Used by edge boxes to upload event snapshots/clips directly to cloud storage
+    without holding a service account key.
+
+    Args:
+        path: GCS object path (e.g. "org-id/2026/08/12/camera-id/event-id/snapshot.webp")
+        content_type: MIME type of the object being uploaded (e.g. "image/webp")
+        expires_in: Seconds until signature expires (default: settings.gcs_signed_url_expiry)
+
+    Returns:
+        V4 signed HTTPS URL ready for HTTP PUT.
+    """
+    client = _get_client()
+    bucket = client.bucket(settings.gcs_bucket)
+    blob = bucket.blob(path)
+    ttl = expires_in or settings.gcs_signed_url_expiry
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(seconds=ttl),
+        method="PUT",
+        content_type=content_type,
+    )
+    return url
+
+
 def sign_gcs_url(uri: Optional[str], expires_in: int | None = None) -> Optional[str]:
     """Convert a `gs://bucket/object` URI to a V4 signed HTTPS URL.
 
