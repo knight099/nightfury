@@ -54,7 +54,18 @@ class ControlRegistry:
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[request_id] = fut
         try:
-            await ws.send_json(msg)
+            try:
+                await ws.send_json(msg)
+            except asyncio.TimeoutError:
+                raise
+            except Exception as e:
+                # Covers the TOCTOU window between the registry.get() check
+                # in the caller and this send: the agent's socket can have
+                # gone away in between (e.g. Starlette's
+                # "Cannot call send once a close message has been sent").
+                # Normalize any such transport failure to ConnectionError so
+                # callers only need to handle one exception type.
+                raise ConnectionError(f"agent socket send failed: {e}") from e
             return await asyncio.wait_for(fut, timeout=timeout)
         finally:
             self._pending.pop(request_id, None)
