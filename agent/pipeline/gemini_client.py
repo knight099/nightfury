@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime
 
 import cv2
 from google import genai
@@ -73,7 +74,8 @@ class GeminiClient:
         resp.raise_for_status()
         body = resp.json()
         self._token = body["access_token"]
-        self._token_expires_at = time.time() + 1700  # slightly under the 1800s broker TTL
+        expires_at = datetime.fromisoformat(body["expires_at"])
+        self._token_expires_at = expires_at.timestamp()
         self._vertex_project = body.get("vertex_project", self._vertex_project)
         self._vertex_location = body.get("vertex_location", self._vertex_location)
         self.client = self._build_client()  # rebuild so the Vertex client uses the fresh token
