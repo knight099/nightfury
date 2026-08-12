@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -80,83 +81,24 @@ func (s *ViewerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.secret != "" && !s.verifyToken(req.CameraID, req.ViewToken) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	pub, ok := s.registry.Get(req.CameraID)
-	if !ok {
-		http.Error(w, "camera not on relay", http.StatusNotFound)
-		return
-	}
-
-	m := &webrtc.MediaEngine{}
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeH264,
-			ClockRate:   90000,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-		},
-		PayloadType: 96,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		http.Error(w, "codec registration failed", http.StatusInternalServerError)
-		return
-	}
-
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
-	pc, err := api.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
-	})
-	if err != nil {
-		http.Error(w, "peer connection failed", http.StatusInternalServerError)
-		return
-	}
-
-	videoTrack, err := webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000},
-		"video", "nightwatch-"+req.CameraID,
-	)
-	if err != nil {
-		_ = pc.Close()
-		http.Error(w, "track create failed", http.StatusInternalServerError)
-		return
-	}
-
-	if _, err = pc.AddTrack(videoTrack); err != nil {
-		_ = pc.Close()
-		http.Error(w, "add track failed", http.StatusInternalServerError)
-		return
-	}
-
-	if err = pc.SetRemoteDescription(webrtc.SessionDescription{
+	answer, err := s.HandleOffer(req.CameraID, req.ViewToken, webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
 		SDP:  req.Offer,
-	}); err != nil {
-		_ = pc.Close()
-		http.Error(w, "set remote: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	answer, err := pc.CreateAnswer(nil)
+	})
 	if err != nil {
-		_ = pc.Close()
-		http.Error(w, "create answer failed", http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrInvalidToken):
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case errors.Is(err, ErrCameraNotFound):
+			http.Error(w, "camera not on relay", http.StatusNotFound)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
-
-	gatherDone := webrtc.GatheringCompletePromise(pc)
-	if err = pc.SetLocalDescription(answer); err != nil {
-		_ = pc.Close()
-		http.Error(w, "set local failed", http.StatusInternalServerError)
-		return
-	}
-	<-gatherDone
-
-	go viewerPump(pc, videoTrack, pub)
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(viewResponse{Answer: pc.LocalDescription().SDP})
+	_ = json.NewEncoder(w).Encode(viewResponse{Answer: answer.SDP})
 }
 
 // viewerPump drains Annex-B H.264 frames from the publisher ring and writes
