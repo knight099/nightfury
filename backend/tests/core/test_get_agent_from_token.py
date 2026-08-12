@@ -10,7 +10,7 @@ from app.services.device_token_service import DeviceTokenService
 
 @pytest.mark.asyncio
 async def test_valid_token_returns_agent(db_session, test_org):
-    token, hashed = DeviceTokenService.mint()
+    token, hashed, _ = DeviceTokenService.mint()
     agent = Agent(
         org_id=test_org.id,
         machine_id=f"machine-{uuid.uuid4().hex[:8]}",
@@ -37,7 +37,7 @@ async def test_missing_header_raises_401(db_session):
 
 @pytest.mark.asyncio
 async def test_bad_token_raises_401(db_session, test_org):
-    _, hashed = DeviceTokenService.mint()
+    _, hashed, _ = DeviceTokenService.mint()
     agent = Agent(
         org_id=test_org.id,
         machine_id=f"machine-{uuid.uuid4().hex[:8]}",
