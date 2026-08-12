@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,7 @@ class Config(BaseSettings):
     # Backend API
     backend_url: str = "https://nightfury-backend.vercel.app"
     worker_api_key: str = "change-me-worker-secret"
+    device_token: str = Field(default="", validation_alias="NIGHTWATCH_DEVICE_TOKEN")
 
     # GCS
     gcs_bucket: str = "nightwatch-events"

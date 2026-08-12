@@ -16,10 +16,12 @@ class ApiClient:
 
     def __init__(self):
         self.base_url = config.backend_url
-        self.headers = {
-            "X-Worker-Key": config.worker_api_key,
-            "Content-Type": "application/json",
-        }
+        auth_header = (
+            {"Authorization": f"Bearer {config.device_token}"}
+            if config.device_token
+            else {"X-Worker-Key": config.worker_api_key}
+        )
+        self.headers = {**auth_header, "Content-Type": "application/json"}
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers=self.headers,
