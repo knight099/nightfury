@@ -55,8 +55,8 @@ class WorkerSupervisor:
 
     def __init__(self):
         self.workers: dict[str, CameraWorker] = {}  # camera_id → worker
-        self.gemini = GeminiClient()  # shared across all workers
-        self.api_client = ApiClient()  # used by supervisor for assignments
+        self.api_client = ApiClient()  # used by supervisor for assignments; also brokers Gemini tokens
+        self.gemini = GeminiClient(self.api_client)  # shared across all workers
         self.mjpeg_server = MJPEGServer(lambda cid: self.workers.get(cid))
 
     async def run(self):

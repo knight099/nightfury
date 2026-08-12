@@ -6,6 +6,7 @@ import time
 import cv2
 from google import genai
 from google.genai.types import GenerateContentConfig, Part
+from google.oauth2.credentials import Credentials
 
 from config import config
 from models import BoundingBox, CameraConfig, DetectedEvent
@@ -23,7 +24,13 @@ CONFIDENCE_THRESHOLDS = {
 class GeminiClient:
     """Gemini Vision API client with retry, circuit breaker, and rate limiting."""
 
-    def __init__(self):
+    def __init__(self, api_client: "ApiClient"):
+        self.api_client = api_client
+        self._token: str | None = None
+        self._token_expires_at: float = 0
+        self._vertex_project = config.gemini_vertex_project
+        self._vertex_location = config.gemini_vertex_location
+
         self.client = self._build_client()
         self.model = config.gemini_model
         self.prompt_builder = PromptBuilder()
@@ -36,14 +43,20 @@ class GeminiClient:
         self.total_errors = 0
 
     def _build_client(self):
-        """Try Vertex AI (ADC) first; fall back to Gemini API key if available."""
+        """Try Vertex AI (broker-issued token) first; fall back to Gemini API key if available."""
         try:
+            if not self._token:
+                # No broker token fetched yet (e.g. at construction time, before the
+                # first analyze_frame() call has run _ensure_token()).
+                raise RuntimeError("no broker token available yet")
+            credentials = Credentials(token=self._token)
             client = genai.Client(
                 vertexai=True,
-                project=config.gemini_vertex_project,
-                location=config.gemini_vertex_location,
+                project=self._vertex_project,
+                location=self._vertex_location,
+                credentials=credentials,
             )
-            logger.info("Gemini client initialized via Vertex AI (ADC)")
+            logger.info("Gemini client initialized via Vertex AI (broker token)")
             return client
         except Exception as e:
             if not config.gemini_api_key:
@@ -52,6 +65,19 @@ class GeminiClient:
             logger.warning(f"Vertex AI auth failed ({e}); falling back to Gemini API key")
             return genai.Client(api_key=config.gemini_api_key)
 
+    async def _ensure_token(self):
+        """Fetch/refresh the broker-issued Vertex AI access token, ~60s ahead of expiry."""
+        if self._token and time.time() < self._token_expires_at - 60:
+            return
+        resp = await self.api_client.client.post("/api/edge/gemini-token")
+        resp.raise_for_status()
+        body = resp.json()
+        self._token = body["access_token"]
+        self._token_expires_at = time.time() + 1700  # slightly under the 1800s broker TTL
+        self._vertex_project = body.get("vertex_project", self._vertex_project)
+        self._vertex_location = body.get("vertex_location", self._vertex_location)
+        self.client = self._build_client()  # rebuild so the Vertex client uses the fresh token
+
     async def analyze_frame(
         self, frame_jpeg: bytes, camera_config: CameraConfig
     ) -> list[DetectedEvent]:
@@ -59,6 +85,8 @@ class GeminiClient:
 
         if time.time() < self.circuit_open_until:
             return []
+
+        await self._ensure_token()
 
         prompt = self.prompt_builder.build(camera_config)
 
