@@ -42,6 +42,25 @@ func NewSupervisor(pythonPath, pipelineDir string, env []string) *Supervisor {
 
 // Health returns the supervisor's current view of the pipeline process's
 // health. Safe for concurrent use.
+//
+// KNOWN GAP — this method currently has NO consumer.
+//
+// The backend's heartbeat contract has a `pipeline` field for exactly this
+// data (see backend/app/schemas/heartbeat.py, PipelineHealth), but heartbeats
+// are posted by the Python pipeline (agent/pipeline/api_client.py), which
+// runs as a SEPARATE PROCESS and cannot observe this Go-side restart state.
+// Nothing bridges the two, so the field is never populated.
+//
+// Closing the gap needs one of:
+//
+//	(a) this supervisor posting its own supplementary heartbeat to
+//	    /internal/heartbeat with the device token the agent already holds, or
+//	(b) a local IPC channel — e.g. writing this Health as JSON to a file
+//	    under the agent state dir for the Python pipeline to read and fold
+//	    into its own heartbeat post.
+//
+// Deliberately left unimplemented for now; documented on both halves of the
+// contract so a follow-up task has a clear starting point.
 func (s *Supervisor) Health() Health {
 	s.mu.Lock()
 	defer s.mu.Unlock()

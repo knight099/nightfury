@@ -32,7 +32,16 @@ class GeminiClient:
         self._vertex_project = config.gemini_vertex_project
         self._vertex_location = config.gemini_vertex_location
 
-        self.client = self._build_client()
+        # No broker token exists yet at construction time, so on an edge box
+        # there is nothing to build a Vertex client from. Defer: the client
+        # is (re)built by _ensure_token() before the first analyze_frame()
+        # call. Failing hard here would crash-loop the whole pipeline
+        # sidecar on every edge box.
+        try:
+            self.client = self._build_client()
+        except Exception as e:
+            logger.info("Gemini client deferred until first broker token: %s", e)
+            self.client = None
         self.model = config.gemini_model
         self.prompt_builder = PromptBuilder()
         self.semaphore = asyncio.Semaphore(config.gemini_max_concurrent)
@@ -44,7 +53,20 @@ class GeminiClient:
         self.total_errors = 0
 
     def _build_client(self):
-        """Try Vertex AI (broker-issued token) first; fall back to Gemini API key if available."""
+        """Build the Gemini client.
+
+        Vertex AI with a broker-issued, short-lived token is the only
+        supported path on an edge box. The static-`GEMINI_API_KEY` fallback
+        exists solely for the legacy Worker-VM deployment mode and is
+        DISABLED when running as an edge box: a transient broker outage must
+        not silently revert the box to holding a long-lived static Gemini
+        credential on physically-accessible hardware, which is precisely
+        what the broker was built to eliminate.
+
+        "Am I an edge box?" uses the same signal as the rest of the pipeline
+        — a device token (NIGHTWATCH_DEVICE_TOKEN) is present.
+        """
+        is_edge_box = bool(config.device_token)
         try:
             if not self._token:
                 # No broker token fetched yet (e.g. at construction time, before the
@@ -60,10 +82,23 @@ class GeminiClient:
             logger.info("Gemini client initialized via Vertex AI (broker token)")
             return client
         except Exception as e:
+            if is_edge_box:
+                logger.error(
+                    "Vertex AI auth failed (%s); running as an edge box "
+                    "(device token present), so the static GEMINI_API_KEY "
+                    "fallback is disabled by policy%s",
+                    e,
+                    " (a GEMINI_API_KEY is set in this environment and is being"
+                    " deliberately ignored)" if config.gemini_api_key else "",
+                )
+                raise
             if not config.gemini_api_key:
                 logger.error(f"Vertex AI auth failed and no GEMINI_API_KEY set: {e}")
                 raise
-            logger.warning(f"Vertex AI auth failed ({e}); falling back to Gemini API key")
+            logger.warning(
+                f"Vertex AI auth failed ({e}); no device token present "
+                "(Worker-VM mode), falling back to static Gemini API key"
+            )
             return genai.Client(api_key=config.gemini_api_key)
 
     async def _ensure_token(self):
@@ -88,7 +123,17 @@ class GeminiClient:
         if time.time() < self.circuit_open_until:
             return []
 
-        await self._ensure_token()
+        try:
+            await self._ensure_token()
+        except Exception as e:
+            logger.error(f"[{camera_config.name}] could not obtain Vertex token: {e}")
+            self._record_failure()
+            return []
+
+        if self.client is None:
+            logger.error(f"[{camera_config.name}] no usable Gemini client")
+            self._record_failure()
+            return []
 
         prompt = self.prompt_builder.build(camera_config)
 
@@ -132,6 +177,19 @@ class GeminiClient:
         return any(s in msg for s in ("credential", "unauthenticated", "unauthorized", "401", "403", "permission"))
 
     def _try_api_key_fallback(self) -> bool:
+        """Swap to a static-API-key client after a mid-flight auth failure.
+
+        Same policy as `_build_client`: never allowed on an edge box, where a
+        long-lived static Gemini key must not become the effective credential
+        just because the broker had a bad minute.
+        """
+        if config.device_token:
+            logger.error(
+                "Vertex auth failed mid-flight; static GEMINI_API_KEY fallback "
+                "is disabled on edge boxes (device token present)%s",
+                " — a key is set and is being ignored" if config.gemini_api_key else "",
+            )
+            return False
         if not config.gemini_api_key:
             return False
         try:

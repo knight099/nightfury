@@ -89,6 +89,10 @@ func (s *ViewerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidToken):
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case errors.Is(err, ErrMissingSecret):
+			// Server misconfiguration, not a caller problem — but we still
+			// refuse to serve the stream (fail closed).
+			http.Error(w, "view token secret not configured", http.StatusServiceUnavailable)
 		case errors.Is(err, ErrCameraNotFound):
 			http.Error(w, "camera not on relay", http.StatusNotFound)
 		case errors.Is(err, ErrBadOffer):

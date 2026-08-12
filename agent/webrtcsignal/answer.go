@@ -15,6 +15,12 @@ var ErrInvalidToken = errors.New("invalid view token")
 // registered for the requested camera ID.
 var ErrCameraNotFound = errors.New("camera not on relay")
 
+// ErrMissingSecret is returned by HandleOffer when no view-token secret is
+// configured. Verification fails closed: without the secret there is no way
+// to tell a backend-issued view token from a forged one, so serving the
+// stream would mean serving it to anyone who can reach the agent.
+var ErrMissingSecret = errors.New("view token secret not configured")
+
 // Per-stage sentinel errors. HandleOffer wraps the underlying pion error
 // with one of these via %w so callers (e.g. ServeHTTP) can distinguish
 // failure stages with errors.Is and reproduce the original ServeHTTP's
@@ -40,7 +46,16 @@ var (
 // this function so it can also be called directly (e.g. from an outbound
 // WebSocket signaling path with no HTTP round trip involved).
 func (s *ViewerServer) HandleOffer(cameraID, viewToken string, offer webrtc.SessionDescription) (webrtc.SessionDescription, error) {
-	if s.secret != "" && !s.verifyToken(cameraID, viewToken) {
+	// FAIL CLOSED. An unset secret means view tokens cannot be verified at
+	// all, so every offer must be rejected — the previous
+	// `s.secret != "" && !verify` form silently accepted ANY token when
+	// STREAM_TOKEN_SECRET was missing from the edge box's environment,
+	// which is exactly the misconfiguration most likely to happen in the
+	// field (a .env copied without the secret).
+	if s.secret == "" {
+		return webrtc.SessionDescription{}, ErrMissingSecret
+	}
+	if !s.verifyToken(cameraID, viewToken) {
 		return webrtc.SessionDescription{}, ErrInvalidToken
 	}
 

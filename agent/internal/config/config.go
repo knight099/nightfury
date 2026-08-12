@@ -21,6 +21,24 @@ type Config struct {
 	// StreamTokenSecret must match the backend's settings.stream_token_secret
 	// (and relay's STREAM_TOKEN_SECRET) — it verifies the HMAC view tokens
 	// backend issues for WebRTC/MJPEG viewer requests.
+	//
+	// SECURITY CAVEAT: this is today a STATIC, SHARED, CROSS-TENANT secret,
+	// and placing it on customer-owned edge hardware is in tension with this
+	// project's goal of shrinking the blast radius of credentials on
+	// physically-accessible devices. Extracting it from one edge box yields
+	// the ability to forge view tokens for ANY camera in ANY org.
+	//
+	// Two mitigations, in order of preference, for a follow-up task:
+	//  1. Per-agent derived secret: backend derives HMAC-SHA256(master,
+	//     agent_id) and provisions only that to the agent, then signs view
+	//     tokens for that agent's cameras with the derived key. Compromise
+	//     is then scoped to one box, and rotation is per-box.
+	//  2. Asymmetric view tokens: backend signs with a private key, agents
+	//     hold only the public key and can verify but never forge.
+	//
+	// Verification FAILS CLOSED when this is empty — see
+	// webrtcsignal.ErrMissingSecret. An unset secret rejects every offer
+	// rather than accepting every offer.
 	StreamTokenSecret string
 }
 

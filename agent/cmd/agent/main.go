@@ -243,21 +243,35 @@ func main() {
 		"NIGHTWATCH_DEVICE_TOKEN="+tok.DeviceToken,
 		"NIGHTWATCH_BACKEND_URL="+backend,
 	)
-	pipelineSup := pipeline.NewSupervisor(
-		filepath.Join(cfg.PipelineDir, ".venv", "bin", "python3"),
-		cfg.PipelineDir,
-		pipelineEnv,
-	)
-	go func() {
-		if err := pipelineSup.Run(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("pipeline supervisor stopped: %v", err)
-		}
-	}()
+	// Only supervise the Python pipeline sidecar when it is actually
+	// installed. Existing agent deployments (and any agent running purely as
+	// a relay tunnel) have no pipeline directory, and unconditionally
+	// spawning a nonexistent interpreter would crash-loop forever.
+	pipelinePython := filepath.Join(cfg.PipelineDir, ".venv", "bin", "python3")
+	if pipelineInstalled(cfg.PipelineDir, pipelinePython) {
+		pipelineSup := pipeline.NewSupervisor(pipelinePython, cfg.PipelineDir, pipelineEnv)
+		go func() {
+			if err := pipelineSup.Run(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("pipeline supervisor stopped: %v", err)
+			}
+		}()
+	} else {
+		slog.Info("pipeline sidecar not installed, skipping supervision",
+			"pipeline_dir", cfg.PipelineDir, "python", pipelinePython)
+	}
 
-	// registry is empty for now: wiring the edge box's own RTSP frames into
-	// it as a Publisher is a follow-up task (see agent/internal/rtsp/client.go),
-	// out of scope here. Until then HandleOffer returns ErrCameraNotFound for
-	// every camera, which is a safe/inert default.
+	// KNOWN GAP (intentional, documented): this registry is constructed
+	// empty and nothing publishes the edge box's own RTSP frames into it
+	// yet — wiring an RTSP reader up as a republish.Publisher is a follow-up
+	// task, out of scope here. Consequence: HandleOffer returns
+	// ErrCameraNotFound for EVERY camera on the edge path, always.
+	//
+	// That is safe rather than a regression because the failure is clean and
+	// fast: control.Client.handleOffer replies immediately with an explicit
+	// {"error": ...} signal_answer, so the backend's request_signal raises
+	// straight away (no 10s timeout wait) and camera_webrtc_offer falls
+	// through to the relay-VM proxy path, which keeps working exactly as it
+	// did before this branch.
 	registry := republish.NewRegistry()
 	viewer := webrtcsignal.NewViewerServer(cfg.StreamTokenSecret, registry)
 	controlClient := control.NewClient(backend, tok.DeviceToken, viewer)
@@ -271,6 +285,24 @@ func main() {
 		slog.Error("supervisor exited", "err", err)
 	}
 	slog.Info("agent shutting down")
+}
+
+// pipelineInstalled reports whether the Python detection pipeline sidecar is
+// actually present and runnable at the configured location: the pipeline
+// directory must exist, contain main.py, and have an executable interpreter
+// at the venv path the supervisor would spawn.
+func pipelineInstalled(pipelineDir, pythonPath string) bool {
+	if fi, err := os.Stat(pipelineDir); err != nil || !fi.IsDir() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(pipelineDir, "main.py")); err != nil {
+		return false
+	}
+	fi, err := os.Stat(pythonPath)
+	if err != nil || fi.IsDir() || fi.Mode()&0111 == 0 {
+		return false
+	}
+	return true
 }
 
 func validateConfiguredIdentity(tok store.Token, cfg config.Config) error {
