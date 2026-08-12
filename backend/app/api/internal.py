@@ -16,6 +16,7 @@ from app.models.event import Event
 from app.models.organization import Organization
 from app.schemas.assignment import Assignment, AssignmentsResponse
 from app.schemas.event import CreateEventRequest, EventResponse
+from app.schemas.heartbeat import HeartbeatRequest
 from app.services.alert_service import alert_service
 from app.services.device_token_service import DeviceTokenService
 from app.services.gcs import sign_gcs_url
@@ -114,8 +115,9 @@ async def list_assignments(
 
 
 @router.post("/heartbeat", status_code=200)
-async def worker_heartbeat(body: dict, db: AsyncSession = Depends(get_db)):
-    camera_id = body.get("camera_id")
+async def worker_heartbeat(body: HeartbeatRequest, db: AsyncSession = Depends(get_db)):
+    data = body.model_dump(exclude_none=True)
+    camera_id = data.get("camera_id")
     if not camera_id:
         return {"status": "ok"}
 
@@ -124,10 +126,14 @@ async def worker_heartbeat(body: dict, db: AsyncSession = Depends(get_db)):
     )
     camera = result.scalar_one_or_none()
     if camera:
-        camera.status = body.get("status", "online")
+        camera.status = data.get("status", "online")
         camera.last_frame_at = datetime.now(timezone.utc)
-        camera.worker_id = body.get("worker_id")
+        camera.worker_id = data.get("worker_id")
         await db.flush()
+
+    # Log pipeline health if present
+    if pipeline := data.get("pipeline"):
+        logger.info("pipeline health for camera %s: %s", camera_id, pipeline)
 
     return {"status": "ok"}
 
