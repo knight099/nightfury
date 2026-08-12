@@ -77,14 +77,43 @@ async def get_agent_from_token(
 
 
 async def verify_worker_key(
+    request: Request,
     x_worker_key: str | None = Header(default=None, alias="X-Worker-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Verify worker API key for internal endpoints."""
-    if not x_worker_key or x_worker_key != settings.worker_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid worker key",
-        )
+    """Verify worker API key or device-token Bearer for internal endpoints.
+
+    Accepts either:
+    1. X-Worker-Key header matching settings.worker_api_key (cloud Worker VM path)
+    2. Authorization: Bearer <token> matching a paired Agent's device_token_hash (edge box path)
+
+    On success, attaches request.state.internal_principal with auth mode details.
+    """
+    # Path 1: Check X-Worker-Key (cloud Worker VM)
+    if x_worker_key and x_worker_key == settings.worker_api_key:
+        request.state.internal_principal = {"kind": "worker"}
+        return
+
+    # Path 2: Check Bearer token (edge box with paired Agent)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        svc = DeviceTokenService()
+        result = await db.execute(select(Agent).where(Agent.status != "unpaired"))
+        for agent in result.scalars():
+            if agent.device_token_hash and svc.verify(token, agent.device_token_hash):
+                request.state.internal_principal = {
+                    "kind": "agent",
+                    "agent_id": agent.id,
+                    "org_id": agent.org_id,
+                }
+                return
+
+    # Neither path succeeded
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid worker key or device token",
+    )
 
 
 # ─── RBAC Helpers ───────────────────────────────────────────────────────────
