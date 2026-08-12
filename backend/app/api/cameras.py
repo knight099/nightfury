@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.agent_control import registry as control_registry
+from app.api.agent_control import SignalError, registry as control_registry
 from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
@@ -284,12 +284,20 @@ async def camera_webrtc_offer(
     """Route a browser WebRTC offer to whichever transport currently serves
     this camera's live view.
 
-    Edge-box path (new): if the camera's agent has an open control
+    Edge-box path (tried first): if the camera's agent has an open control
     WebSocket, push the offer down that socket and relay back the answer.
     Worker-VM-fallback path (existing, unchanged): proxy the offer to the
     relay viewer endpoint. Returns an SDP answer when the camera is active
     on the relay. Returns 404 when the camera is not currently streaming via
     the relay (fall back to MJPEG on the client).
+
+    The edge-box path is best-effort: ANY failure (agent not connected,
+    explicit error from the agent, socket loss, timeout) falls THROUGH to the
+    relay proxy rather than erroring out. That matters because every agent
+    now opens a control socket unconditionally, while the edge box's own
+    RTSP republisher is not wired up yet — so without the fall-through an
+    upgraded agent would silently shadow, and break, live view that works
+    fine over the relay today.
     """
     q = _camera_query(user).where(Camera.id == camera_id)
     result = await db.execute(q)
@@ -302,18 +310,25 @@ async def camera_webrtc_offer(
     agent_id = camera.agent_id
     if agent_id and control_registry.get(agent_id) is not None:
         try:
-            result = await control_registry.request_signal(
+            signal_result = await control_registry.request_signal(
                 agent_id,
                 {
                     "type": "signal_offer",
                     "camera_id": str(camera_id),
                     "view_token": view_token,
+                    # Raw SDP string — same representation the relay path
+                    # below uses, and what the browser sends.
                     "offer": body.offer,
                 },
             )
-        except (ConnectionError, asyncio.TimeoutError):
-            raise HTTPException(status_code=503, detail="Edge box unreachable")
-        return WebRTCAnswerResponse(answer=result["answer"])
+        except (ConnectionError, SignalError, asyncio.TimeoutError) as exc:
+            logger.info(
+                "edge-box webrtc path failed for camera %s (%s); falling back to relay",
+                camera_id,
+                exc,
+            )
+        else:
+            return WebRTCAnswerResponse(answer=signal_result["answer"])
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:

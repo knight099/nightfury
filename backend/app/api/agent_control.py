@@ -17,20 +17,42 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from sqlalchemy import select
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.database import async_session_factory
-from app.models.agent import Agent
-from app.services.device_token_service import DeviceTokenService
+from app.services.agent_auth import resolve_agent_by_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+class SignalError(Exception):
+    """The agent replied to a signaling request with an explicit error.
+
+    Distinct from ConnectionError (socket gone) and asyncio.TimeoutError (no
+    reply at all): this is a fast, definitive "I can't serve this" from the
+    edge box, e.g. the camera isn't published locally.
+    """
+
+
 class ControlRegistry:
-    """Tracks open agent control sockets and brokers signaling round-trips."""
+    """Tracks open agent control sockets and brokers signaling round-trips.
+
+    Wire protocol (both directions, JSON over the control WebSocket):
+
+    - Backend → agent: ``{"type": "signal_offer", "request_id": str,
+      "camera_id": str, "view_token": str, "offer": <SDP string>}``
+    - Agent → backend: ``{"type": "signal_answer", "request_id": str,
+      "answer": <SDP string>}`` on success, or
+      ``{"type": "signal_answer", "request_id": str, "error": str}`` on any
+      failure.
+
+    ``offer``/``answer`` are RAW SDP STRINGS — the same representation the
+    relay HTTP path and the browser already use (see
+    ``schemas.camera.WebRTCOfferRequest.offer``), never marshalled
+    RTCSessionDescription objects.
+    """
 
     def __init__(self):
         self._conns: dict[uuid.UUID, WebSocket] = {}
@@ -46,12 +68,19 @@ class ControlRegistry:
         return self._conns.get(agent_id)
 
     async def request_signal(self, agent_id: uuid.UUID, msg: dict, timeout: float = 10.0) -> dict:
+        """Push a signaling message to an agent and await its signal_answer.
+
+        Raises ConnectionError if the agent is not connected or the socket
+        send fails, SignalError if the agent replied with an explicit
+        ``error`` field (fast failure, no timeout wait), and
+        asyncio.TimeoutError if no reply arrives within ``timeout``.
+        """
         ws = self.get(agent_id)
         if ws is None:
             raise ConnectionError("agent not connected")
         request_id = str(uuid.uuid4())
         msg["request_id"] = request_id
-        fut: asyncio.Future = asyncio.get_event_loop().create_future()
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[request_id] = fut
         try:
             try:
@@ -66,9 +95,18 @@ class ControlRegistry:
                 # Normalize any such transport failure to ConnectionError so
                 # callers only need to handle one exception type.
                 raise ConnectionError(f"agent socket send failed: {e}") from e
-            return await asyncio.wait_for(fut, timeout=timeout)
+            payload = await asyncio.wait_for(fut, timeout=timeout)
         finally:
             self._pending.pop(request_id, None)
+
+        # The agent always replies, even on failure, with an explicit
+        # {"error": "..."} field — surface that as an immediate failure
+        # rather than making callers wait out the full timeout.
+        if payload.get("error"):
+            raise SignalError(str(payload["error"]))
+        if not payload.get("answer"):
+            raise SignalError("agent returned no answer")
+        return payload
 
     def resolve(self, request_id: str, payload: dict) -> None:
         fut = self._pending.get(request_id)
@@ -79,29 +117,53 @@ class ControlRegistry:
 registry = ControlRegistry()
 
 
-async def _authenticate_ws(token: str) -> Agent | None:
-    """Resolve a paired Agent from a device token, same scan-and-verify
-    pattern as `app.core.dependencies.get_agent_from_token`, adapted for a
-    WebSocket handler (token arrives as a query param, not a header, since
-    browsers' native WebSocket API can't set custom headers)."""
-    svc = DeviceTokenService()
+async def _authenticate_ws(token: str) -> uuid.UUID | None:
+    """Resolve a paired agent's id from a device token.
+
+    Shares `app.services.agent_auth.resolve_agent_by_token` with the HTTP
+    dependencies so this path also gets the indexed lookup rather than an
+    O(N_agents) Argon2 scan.
+
+    Returns the id rather than the ORM object: the session closes here, and
+    committing the possible device_token_id backfill expires the instance's
+    attributes, so the object must not outlive the session.
+    """
     async with async_session_factory() as db:
-        result = await db.execute(select(Agent).where(Agent.status != "unpaired"))
-        for agent in result.scalars():
-            if agent.device_token_hash and svc.verify(token, agent.device_token_hash):
-                return agent
-    return None
+        agent = await resolve_agent_by_token(db, token)
+        if agent is None:
+            return None
+        agent_id = agent.id
+        # resolve_agent_by_token may backfill device_token_id; this session
+        # is ours, so commit that before it's discarded.
+        await db.commit()
+        return agent_id
+
+
+def _bearer_token(websocket: WebSocket) -> str:
+    """Extract the device token from the upgrade request's Authorization header.
+
+    The token is deliberately NOT accepted as a query parameter: query-string
+    secrets end up in access logs, proxy logs and APM traces. The only client
+    of this endpoint is the Go agent (agent/internal/control/client.go), which
+    sets this header on the WebSocket handshake — no browser is involved, so
+    the usual "browsers can't set WS headers" constraint does not apply.
+    """
+    header = websocket.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return ""
+    return header[7:].strip()
 
 
 @router.websocket("/api/agents/me/control")
-async def agent_control_socket(websocket: WebSocket, token: str = Query(...)):
-    agent = await _authenticate_ws(token)
-    if agent is None:
+async def agent_control_socket(websocket: WebSocket):
+    token = _bearer_token(websocket)
+    agent_id = await _authenticate_ws(token) if token else None
+    if agent_id is None:
         await websocket.close(code=4401)
         return
 
     await websocket.accept()
-    registry.register(agent.id, websocket)
+    registry.register(agent_id, websocket)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -120,4 +182,4 @@ async def agent_control_socket(websocket: WebSocket, token: str = Query(...)):
     except WebSocketDisconnect:
         pass
     finally:
-        registry.unregister(agent.id)
+        registry.unregister(agent_id)

@@ -10,8 +10,8 @@ package control
 
 import (
 	"context"
-	"encoding/json"
 	"log"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -81,11 +81,16 @@ func (c *Client) runOnce(ctx context.Context) error {
 		u.Scheme = "wss"
 	}
 	u.Path = "/api/agents/me/control"
-	q := u.Query()
-	q.Set("token", c.deviceToken)
-	u.RawQuery = q.Encode()
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), nil)
+	// The device token goes in an Authorization header, never a query
+	// string: query-string secrets leak into access logs, proxy logs and
+	// APM traces. The browser-WebSocket limitation that would force a query
+	// param does not apply here — this endpoint's only client is this Go
+	// agent, and gorilla/websocket lets us set arbitrary handshake headers.
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+c.deviceToken)
+
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
 	if err != nil {
 		return err
 	}
@@ -115,34 +120,46 @@ func (c *Client) runOnce(ctx context.Context) error {
 // handleOffer decodes a signal_offer message, resolves it via
 // viewer.HandleOffer, and writes back a signal_answer reply. writeMu must
 // be the same mutex shared by every goroutine writing to conn.
+//
+// Wire format: `offer` and `answer` are RAW SDP STRINGS, not marshalled
+// webrtc.SessionDescription objects. This matches the existing relay
+// contract (backend's WebRTCOfferRequest.offer / WebRTCAnswerResponse.answer
+// are both typed `str`, and the browser sends/expects a bare SDP string),
+// so the SessionDescription wrapper only exists locally inside this function.
+//
+// handleOffer ALWAYS replies with a signal_answer — including an explicit
+// {"error": "..."} form on any failure path — so the backend's
+// ControlRegistry.request_signal fails fast instead of waiting out its full
+// ~10s timeout on a knowable failure (e.g. camera not published locally).
 func (c *Client) handleOffer(conn *websocket.Conn, writeMu *sync.Mutex, msg map[string]any) {
 	cameraID, _ := msg["camera_id"].(string)
 	viewToken, _ := msg["view_token"].(string)
 	requestID, _ := msg["request_id"].(string)
-	offerRaw, err := json.Marshal(msg["offer"])
-	if err != nil {
-		log.Printf("bad offer payload: %v", err)
+
+	reply := func(payload map[string]any) {
+		payload["type"] = "signal_answer"
+		payload["request_id"] = requestID
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		if err := conn.WriteJSON(payload); err != nil {
+			log.Printf("failed to send signal_answer for camera %s: %v", cameraID, err)
+		}
+	}
+
+	offerSDP, ok := msg["offer"].(string)
+	if !ok || offerSDP == "" {
+		log.Printf("bad offer payload for camera %s: offer is not a non-empty SDP string", cameraID)
+		reply(map[string]any{"error": "offer must be a non-empty SDP string"})
 		return
 	}
-	var offer webrtc.SessionDescription
-	if err := json.Unmarshal(offerRaw, &offer); err != nil {
-		log.Printf("bad offer payload: %v", err)
-		return
-	}
+	offer := webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offerSDP}
 
 	answer, err := c.viewer.HandleOffer(cameraID, viewToken, offer)
 	if err != nil {
 		log.Printf("HandleOffer failed for camera %s: %v", cameraID, err)
+		reply(map[string]any{"error": err.Error()})
 		return
 	}
 
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	if err := conn.WriteJSON(map[string]any{
-		"type":       "signal_answer",
-		"request_id": requestID,
-		"answer":     answer,
-	}); err != nil {
-		log.Printf("failed to send signal_answer for camera %s: %v", cameraID, err)
-	}
+	reply(map[string]any{"answer": answer.SDP})
 }
