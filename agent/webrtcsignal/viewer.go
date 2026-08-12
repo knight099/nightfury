@@ -91,6 +91,22 @@ func (s *ViewerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		case errors.Is(err, ErrCameraNotFound):
 			http.Error(w, "camera not on relay", http.StatusNotFound)
+		case errors.Is(err, ErrBadOffer):
+			// Malformed/incompatible remote SDP offer is a client error,
+			// matching the original ServeHTTP's 400 for this stage.
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, ErrCodecRegistration):
+			http.Error(w, "codec registration failed", http.StatusInternalServerError)
+		case errors.Is(err, ErrPeerConnectionInit):
+			http.Error(w, "peer connection failed", http.StatusInternalServerError)
+		case errors.Is(err, ErrTrackCreate):
+			http.Error(w, "track create failed", http.StatusInternalServerError)
+		case errors.Is(err, ErrAddTrack):
+			http.Error(w, "add track failed", http.StatusInternalServerError)
+		case errors.Is(err, ErrCreateAnswer):
+			http.Error(w, "create answer failed", http.StatusInternalServerError)
+		case errors.Is(err, ErrSetLocal):
+			http.Error(w, "set local failed", http.StatusInternalServerError)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
