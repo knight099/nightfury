@@ -47,8 +47,8 @@ class CameraWorker:
             ttl_seconds=config.track_ttl_seconds,
             sequence_state_factory=SequenceState,
         )
-        self.gcs = GCSUploader()
         self.api = ApiClient()
+        self.gcs = GCSUploader(self.api)
         self.packager = EventPackager(self.gcs, self.api)
 
         self._running = False

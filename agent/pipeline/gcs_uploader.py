@@ -1,6 +1,6 @@
 import logging
 
-from google.cloud import storage
+import httpx
 
 from config import config
 
@@ -8,25 +8,32 @@ logger = logging.getLogger(__name__)
 
 
 class GCSUploader:
-    """Uploads event snapshots and clips to Google Cloud Storage."""
+    """Uploads event snapshots and clips to Google Cloud Storage via
+    backend-issued signed upload URLs (no direct GCS credentials on the edge)."""
 
-    def __init__(self):
-        self.bucket = None
-        try:
-            client = storage.Client(project=config.gcs_project)
-            self.bucket = client.bucket(config.gcs_bucket)
-        except Exception as e:
-            logger.warning(f"GCS client init failed, uploads will be skipped: {e}")
+    def __init__(self, api_client):
+        self.api_client = api_client  # reuse existing device-token-authenticated client
 
     async def upload(self, path: str, data: bytes, content_type: str) -> str:
-        """Upload bytes to GCS. Returns the public URL or gs:// path."""
-        if self.bucket is None:
-            return f"gs://{config.gcs_bucket}/{path}"
+        """Upload bytes to GCS via a backend-issued signed URL. Returns the gs:// URI."""
         try:
-            blob = self.bucket.blob(path)
-            blob.upload_from_string(data, content_type=content_type)
-            return f"gs://{config.gcs_bucket}/{path}"
+            resp = await self.api_client.client.post(
+                "/api/edge/upload-url",
+                json={"path": path, "content_type": content_type},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            upload_url = body["upload_url"]
+            gs_uri = body["gs_uri"]
+
+            async with httpx.AsyncClient() as put_client:
+                put_resp = await put_client.put(
+                    upload_url, content=data, headers={"Content-Type": content_type}
+                )
+                put_resp.raise_for_status()
+
+            return gs_uri
         except Exception as e:
-            logger.error(f"GCS upload failed for {path}: {e}")
+            logger.error(f"GCS signed-URL upload failed for {path}: {e}")
             # Return a placeholder — the event will still be stored
             return f"gs://{config.gcs_bucket}/{path}"
