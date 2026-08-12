@@ -26,14 +26,17 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nightwatch/agent/internal/config"
+	"github.com/nightwatch/agent/internal/control"
 	"github.com/nightwatch/agent/internal/devicepair"
 	"github.com/nightwatch/agent/internal/discovery"
 	"github.com/nightwatch/agent/internal/localui"
 	"github.com/nightwatch/agent/internal/pairing"
 	"github.com/nightwatch/agent/internal/pipeline"
+	"github.com/nightwatch/agent/internal/republish"
 	"github.com/nightwatch/agent/internal/store"
 	"github.com/nightwatch/agent/internal/supervisor"
 	"github.com/nightwatch/agent/internal/transport"
+	"github.com/nightwatch/agent/webrtcsignal"
 )
 
 // discoveryInterval is how often the agent rescans the LAN for ONVIF
@@ -248,6 +251,19 @@ func main() {
 	go func() {
 		if err := pipelineSup.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("pipeline supervisor stopped: %v", err)
+		}
+	}()
+
+	// registry is empty for now: wiring the edge box's own RTSP frames into
+	// it as a Publisher is a follow-up task (see agent/internal/rtsp/client.go),
+	// out of scope here. Until then HandleOffer returns ErrCameraNotFound for
+	// every camera, which is a safe/inert default.
+	registry := republish.NewRegistry()
+	viewer := webrtcsignal.NewViewerServer(cfg.StreamTokenSecret, registry)
+	controlClient := control.NewClient(backend, tok.DeviceToken, viewer)
+	go func() {
+		if err := controlClient.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("control client stopped: %v", err)
 		}
 	}()
 

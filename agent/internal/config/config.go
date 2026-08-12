@@ -18,6 +18,10 @@ type Config struct {
 	LocalUIAddr    string
 	StateDir       string
 	PipelineDir    string
+	// StreamTokenSecret must match the backend's settings.stream_token_secret
+	// (and relay's STREAM_TOKEN_SECRET) — it verifies the HMAC view tokens
+	// backend issues for WebRTC/MJPEG viewer requests.
+	StreamTokenSecret string
 }
 
 // Load reads config from environment variables.
@@ -39,6 +43,8 @@ func Load() Config {
 		LocalUIAddr: envOr("AGENT_UI_ADDR", ":8765"),
 		StateDir:    envOr("AGENT_STATE_DIR", "/var/lib/nightwatch-agent"),
 		PipelineDir: envOr("AGENT_PIPELINE_DIR", "/opt/nightwatch/agent/pipeline"),
+
+		StreamTokenSecret: os.Getenv("STREAM_TOKEN_SECRET"),
 	}
 }
 
