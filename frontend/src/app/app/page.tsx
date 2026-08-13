@@ -11,12 +11,22 @@ import { useAuthStore } from "@/lib/store";
 export default function HomePage() {
   const { user } = useAuthStore();
 
-  const { data: cameras, isLoading: camsLoading } = useQuery({
+  const {
+    data: cameras,
+    isLoading: camsLoading,
+    isError: camsError,
+    error: camsErrorObj,
+  } = useQuery({
     queryKey: ["cameras"],
     queryFn: () => api.getCameras(),
   });
 
-  const { data: eventsData, isLoading: eventsLoading } = useQuery({
+  const {
+    data: eventsData,
+    isLoading: eventsLoading,
+    isError: eventsError,
+    error: eventsErrorObj,
+  } = useQuery({
     queryKey: ["events", "recent"],
     queryFn: () => api.getEvents({ per_page: "5" }),
   });
@@ -50,12 +60,14 @@ export default function HomePage() {
           </div>
           <div>
             <div className="text-xl font-bold mb-1">
-              {events.length === 0 ? "All quiet" : `${events.length} recent events`}
+              {eventsError ? "Couldn't load activity" : events.length === 0 ? "All quiet" : `${events.length} recent events`}
             </div>
             <div className="text-sm text-[oklch(75%_0.01_265)]">
-              {events.length === 0
-                ? "Nothing needed you recently."
-                : "Here's what's happened lately."}
+              {eventsError
+                ? "Something went wrong loading recent events."
+                : events.length === 0
+                  ? "Nothing needed you recently."
+                  : "Here's what's happened lately."}
             </div>
           </div>
         </div>
@@ -70,7 +82,11 @@ export default function HomePage() {
           See all →
         </Link>
       </div>
-      {cameras && cameras.length > 0 ? (
+      {camsError ? (
+        <p className="text-sm text-[oklch(70.4%_0.191_22.216)] mb-10">
+          {camsErrorObj instanceof Error ? camsErrorObj.message : "Something went wrong loading cameras."}
+        </p>
+      ) : cameras && cameras.length > 0 ? (
         <div className="grid grid-cols-4 gap-4 mb-10">
           {cameras.map((cam) => (
             <HomeCameraTile key={cam.id} camera={cam} />
@@ -87,7 +103,11 @@ export default function HomePage() {
         </Link>
       </div>
       <div className="flex flex-col border border-[oklch(22%_0.015_265)] rounded-[14px] overflow-hidden mb-9">
-        {events.length > 0 ? (
+        {eventsError ? (
+          <div className="p-6 text-sm text-[oklch(70.4%_0.191_22.216)] text-center">
+            {eventsErrorObj instanceof Error ? eventsErrorObj.message : "Something went wrong loading events."}
+          </div>
+        ) : events.length > 0 ? (
           events.map((ev) => <ActivityRow key={ev.id} event={ev} cameraName={cameraName(ev.camera_id)} />)
         ) : (
           <div className="p-6 text-sm text-[oklch(55%_0.01_265)] text-center">No recent events.</div>
