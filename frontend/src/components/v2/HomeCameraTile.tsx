@@ -10,6 +10,7 @@ export function HomeCameraTile({ camera }: { camera: Camera }) {
     queryKey: ["camera-latest-frame", camera.id],
     queryFn: () => api.getCameraLatestFrame(camera.id),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
   });
 
   const dotColor =

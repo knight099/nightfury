@@ -15,6 +15,7 @@ export default function ActivityPageV2() {
   const { data: eventsData, isLoading, isError, error } = useQuery({
     queryKey: ["events", "activity", filter],
     queryFn: () => api.getEvents({ per_page: "50", ...(filter !== "all" && { severity: filter }) }),
+    refetchInterval: 10000,
   });
 
   const cameraName = (id: string) => cameras?.find((c) => c.id === id)?.name ?? "Unknown camera";
@@ -40,7 +41,7 @@ export default function ActivityPageV2() {
       {isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : isError ? (
-        <div className="p-6 text-sm text-red-400 text-center border border-red-900 rounded-[14px] bg-red-950/20">
+        <div className="p-6 text-sm text-center text-[oklch(70.4%_0.191_22.216)] border border-[oklch(70.4%_0.191_22.216)] rounded-[14px] bg-[oklch(18%_0.2_22)]">
           Failed to load events: {error?.message || "Unknown error"}
         </div>
       ) : (

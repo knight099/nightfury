@@ -29,6 +29,7 @@ export default function HomePage() {
   } = useQuery({
     queryKey: ["events", "recent"],
     queryFn: () => api.getEvents({ per_page: "5" }),
+    refetchInterval: 10000,
   });
 
   const cameraName = (id: string) => cameras?.find((c) => c.id === id)?.name ?? "Unknown camera";

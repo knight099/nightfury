@@ -13,7 +13,11 @@ export default function DigestsPageV2() {
     queryFn: () => api.getDigests(),
   });
 
-  const { data: prefs } = useQuery({
+  const {
+    data: prefs,
+    isError: prefsError,
+    error: prefsErrorObj,
+  } = useQuery({
     queryKey: ["digest-preferences"],
     queryFn: () => api.getDigestPreferences(),
   });
@@ -28,31 +32,48 @@ export default function DigestsPageV2() {
     <div className="max-w-[1040px] mx-auto px-12 pt-12 pb-20">
       <div className="text-[28px] font-bold tracking-tight mb-6">Digests</div>
 
-      {prefs && (
-        <div className="flex gap-6 mb-8 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={prefs.morning_enabled}
-              onChange={(e) => updatePrefs.mutate({ ...prefs, morning_enabled: e.target.checked })}
-            />
-            Morning digest ({prefs.morning_local_time})
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={prefs.evening_enabled}
-              onChange={(e) => updatePrefs.mutate({ ...prefs, evening_enabled: e.target.checked })}
-            />
-            Evening digest ({prefs.evening_local_time})
-          </label>
+      {prefsError ? (
+        <div className="mb-8 text-sm text-[oklch(70.4%_0.191_22.216)]">
+          {prefsErrorObj instanceof Error
+            ? prefsErrorObj.message
+            : "Couldn't load your digest schedule."}
         </div>
-      )}
+      ) : prefs ? (
+        <div className="mb-8 text-sm">
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={prefs.morning_enabled}
+                disabled={updatePrefs.isPending}
+                onChange={(e) => updatePrefs.mutate({ ...prefs, morning_enabled: e.target.checked })}
+              />
+              Morning digest ({prefs.morning_local_time})
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={prefs.evening_enabled}
+                disabled={updatePrefs.isPending}
+                onChange={(e) => updatePrefs.mutate({ ...prefs, evening_enabled: e.target.checked })}
+              />
+              Evening digest ({prefs.evening_local_time})
+            </label>
+          </div>
+          {updatePrefs.isError && (
+            <div className="mt-2 text-[13px] text-[oklch(70.4%_0.191_22.216)]">
+              {updatePrefs.error instanceof Error
+                ? `Couldn't save that change: ${updatePrefs.error.message}`
+                : "Couldn't save that change."}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : isError ? (
-        <div className="p-6 text-sm text-red-400 text-center border border-red-900 rounded-[14px] bg-red-950/20">
+        <div className="p-6 text-sm text-center text-[oklch(70.4%_0.191_22.216)] border border-[oklch(70.4%_0.191_22.216)] rounded-[14px] bg-[oklch(18%_0.2_22)]">
           Failed to load digests: {error?.message || "Unknown error"}
         </div>
       ) : (

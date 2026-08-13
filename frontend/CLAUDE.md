@@ -151,9 +151,22 @@ src/
 
 ## Running
 ```bash
+cp .env.example .env.local   # then fill in values
 npm run dev    # http://localhost:3000
 npm run build  # Verify no type errors
 ```
+
+## Environment
+All frontend config lives in `.env.example` (committed template) → copy to `.env.local`.
+Vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_RELAY_URL`, `NEXT_PUBLIC_AGENT_DOWNLOAD_BASE_URL`,
+`NEXT_PUBLIC_NEW_UI`.
+
+`NEXT_PUBLIC_NEW_UI=true` serves the V2 shell at `/app` and redirects every legacy route to
+`/app`. It is intended for internal dogfooding only until the remaining features are ported —
+**do not enable it in any environment real users can reach.** Still missing from V2 while the
+flag is on: event list + approve/reject feedback (`/events`), alert rule CRUD (`/alerts`),
+camera/device pairing (`/cameras/connect`), the add-camera form, usage page (`/usage`), and the
+test-camera page (`/test-camera`).
 
 ## Critical Rules
 - NEVER use light mode colors — this is a dark-only UI
