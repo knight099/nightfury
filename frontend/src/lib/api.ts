@@ -300,6 +300,14 @@ class ApiClient {
   }
 
   // Admin
+  async adminGetAiUsage(orgId: string, days = 30, limit = 100) {
+    return this.request<{
+      period_days: number;
+      aggregate: { calls: number; prompt_tokens: number; output_tokens: number; total_tokens: number; cost_usd: number; avg_latency_ms: number };
+      recent: { id: string; timestamp: string; username: string; model: string; operation: string; total_tokens: number; cost_usd: number }[];
+    }>(`/api/admin/ai-usage?org_id=${orgId}&days=${days}&limit=${limit}`);
+  }
+
   async adminGetOrgs(includeDeleted = false) {
     const qs = includeDeleted ? "?include_deleted=true" : "";
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }[]>(`/api/admin/orgs${qs}`);

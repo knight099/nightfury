@@ -1,15 +1,17 @@
 """Super admin routes — full control over all tenants, users, passwords, sessions."""
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.security import hash_password
 from app.core.sessions import session_manager
+from app.models.ai_usage import AIUsage
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, UpdateUserRequest, UserResponse
@@ -286,3 +288,66 @@ async def view_user_sessions(
     _require_super_admin(user)
     sessions = await session_manager.get_active_sessions(str(user_id))
     return {"sessions": sessions}
+
+
+# ── AI Usage Reporting (super_admin, cross-org) ─────────────────────────────
+
+
+@router.get("/ai-usage")
+async def admin_ai_usage(
+    org_id: uuid.UUID = Query(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Cross-org AI usage report — super_admin only. Same shape as
+    /api/settings/ai-usage, but scoped by an explicit org_id param
+    instead of the caller's own org."""
+    _require_super_admin(user)
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    agg_q = select(
+        func.count(AIUsage.id).label("calls"),
+        func.coalesce(func.sum(AIUsage.prompt_tokens), 0).label("prompt_tokens"),
+        func.coalesce(func.sum(AIUsage.output_tokens), 0).label("output_tokens"),
+        func.coalesce(func.sum(AIUsage.total_tokens), 0).label("total_tokens"),
+        func.coalesce(func.sum(AIUsage.cost_usd), 0.0).label("cost_usd"),
+        func.coalesce(func.avg(AIUsage.latency_ms), 0).label("avg_latency_ms"),
+    ).where(AIUsage.org_id == org_id, AIUsage.timestamp >= since)
+    agg_row = (await db.execute(agg_q)).one()
+
+    recent_q = (
+        select(AIUsage, User.username)
+        .join(User, User.id == AIUsage.user_id)
+        .where(AIUsage.org_id == org_id, AIUsage.timestamp >= since)
+        .order_by(desc(AIUsage.timestamp))
+        .limit(limit)
+    )
+    recent_rows = (await db.execute(recent_q)).all()
+    recent = [
+        {
+            "id": str(row.AIUsage.id),
+            "timestamp": row.AIUsage.timestamp.isoformat(),
+            "username": row.username,
+            "model": row.AIUsage.model,
+            "operation": row.AIUsage.operation,
+            "total_tokens": row.AIUsage.total_tokens,
+            "cost_usd": row.AIUsage.cost_usd,
+        }
+        for row in recent_rows
+    ]
+
+    return {
+        "period_days": days,
+        "aggregate": {
+            "calls": agg_row.calls or 0,
+            "prompt_tokens": int(agg_row.prompt_tokens or 0),
+            "output_tokens": int(agg_row.output_tokens or 0),
+            "total_tokens": int(agg_row.total_tokens or 0),
+            "cost_usd": float(agg_row.cost_usd or 0.0),
+            "avg_latency_ms": int(agg_row.avg_latency_ms or 0),
+        },
+        "recent": recent,
+    }
