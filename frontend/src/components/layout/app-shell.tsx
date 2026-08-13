@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { isNewUiEnabled } from "@/lib/flags";
 import { cn } from "@/lib/utils";
 import { startOnboardingTour } from "@/lib/tour";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -59,6 +60,8 @@ export function AppShell({
   useEffect(() => {
     if (!token) {
       router.replace("/login");
+    } else if (isNewUiEnabled()) {
+      router.replace("/app");
     } else if (user?.must_change_password) {
       router.replace("/change-password");
     } else if (requireRole && user?.role !== requireRole) {
