@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,6 +12,8 @@ from app.core.dependencies import get_current_user
 from app.core.security import hash_password
 from app.core.sessions import session_manager
 from app.models.ai_usage import AIUsage
+from app.models.camera import Camera
+from app.models.event import Event
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, UpdateUserRequest, UserResponse
@@ -38,6 +40,86 @@ async def list_all_orgs(
         q = q.where(Organization.deleted_at.is_(None))
     result = await db.execute(q.order_by(Organization.created_at.desc()))
     return [OrgResponse.model_validate(o) for o in result.scalars().all()]
+
+
+@router.get("/orgs-health")
+async def orgs_health(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Per-org camera/event health snapshot — super_admin only."""
+    _require_super_admin(user)
+
+    orgs = (
+        await db.execute(
+            select(Organization).where(Organization.deleted_at.is_(None)).order_by(Organization.name)
+        )
+    ).scalars().all()
+
+    cam_rows = (
+        await db.execute(
+            select(
+                Camera.org_id,
+                func.count(Camera.id).label("camera_count"),
+                func.sum(case((Camera.status == "online", 1), else_=0)).label("cameras_online"),
+            )
+            .where(Camera.deleted_at.is_(None))
+            .group_by(Camera.org_id)
+        )
+    ).all()
+    cam_map = {r.org_id: r for r in cam_rows}
+
+    now = datetime.now(timezone.utc)
+    since_24h = now - timedelta(hours=24)
+    since_7d = now - timedelta(days=7)
+
+    ev24_map = {
+        r.org_id: r.c
+        for r in (
+            await db.execute(
+                select(Event.org_id, func.count(Event.id).label("c"))
+                .where(Event.timestamp >= since_24h)
+                .group_by(Event.org_id)
+            )
+        ).all()
+    }
+    ev7_map = {
+        r.org_id: r.c
+        for r in (
+            await db.execute(
+                select(Event.org_id, func.count(Event.id).label("c"))
+                .where(Event.timestamp >= since_7d)
+                .group_by(Event.org_id)
+            )
+        ).all()
+    }
+    last_ev_map = {
+        r.org_id: r.last
+        for r in (
+            await db.execute(select(Event.org_id, func.max(Event.timestamp).label("last")).group_by(Event.org_id))
+        ).all()
+    }
+
+    result = []
+    for org in orgs:
+        cam = cam_map.get(org.id)
+        camera_count = cam.camera_count if cam else 0
+        cameras_online = int(cam.cameras_online) if cam and cam.cameras_online else 0
+        last_event_at = last_ev_map.get(org.id)
+        result.append(
+            {
+                "org_id": str(org.id),
+                "name": org.name,
+                "plan": org.plan,
+                "camera_count": camera_count,
+                "cameras_online": cameras_online,
+                "cameras_offline": camera_count - cameras_online,
+                "events_last_24h": ev24_map.get(org.id, 0),
+                "events_last_7d": ev7_map.get(org.id, 0),
+                "last_event_at": last_event_at.isoformat() if last_event_at else None,
+            }
+        )
+    return result
 
 
 @router.post("/orgs", response_model=OrgResponse, status_code=201)
