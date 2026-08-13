@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -37,6 +38,9 @@ export default function AdminAiPageV2() {
 
   return (
     <div className="max-w-[1040px] mx-auto px-12 pt-12 pb-20">
+      <Link href="/app/admin" className="text-[13px] text-[oklch(62%_0.01_265)] mb-4 inline-block">
+        ← Admin
+      </Link>
       <div className="text-[28px] font-bold tracking-tight mb-6">AI usage</div>
 
       <select

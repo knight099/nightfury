@@ -79,7 +79,7 @@ export function SidebarV2() {
 
       {user?.role === "super_admin" && (
         <Link
-          href="/admin"
+          href="/app/admin"
           className="mt-3.5 text-center text-[11.5px] text-[oklch(42%_0.01_265)] hover:text-[oklch(58%_0.01_265)] transition-colors"
         >
           Super Admin login &rarr;

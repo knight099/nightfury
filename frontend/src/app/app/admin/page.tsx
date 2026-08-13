@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -50,6 +51,12 @@ export default function AdminPageV2() {
         >
           Orgs
         </button>
+        <Link
+          href="/app/admin/ai"
+          className="text-sm font-semibold px-4 py-2 rounded-lg text-[oklch(72%_0.01_265)] hover:text-[oklch(95%_0.005_265)] transition-colors"
+        >
+          AI usage →
+        </Link>
       </div>
 
       {tab === "users" && (
