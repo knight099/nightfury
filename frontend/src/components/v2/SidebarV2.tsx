@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Camera, Map, Bot, Activity, FileText, Settings, LogOut } from "lucide-react";
+import { Home, Camera, Map, Bot, Activity, FileText, Settings, LogOut, Video } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ const navItems = [
   { href: "/app/activity", label: "Activity", icon: Activity },
   { href: "/app/digests", label: "Digests", icon: FileText },
   { href: "/app/settings", label: "Settings", icon: Settings },
+  { href: "/app/test-camera", label: "Test AI", icon: Video },
 ];
 
 export function SidebarV2() {
