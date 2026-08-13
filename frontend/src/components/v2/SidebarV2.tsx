@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Camera, Map, Bot, Activity, FileText, Settings } from "lucide-react";
+import { Home, Camera, Map, Bot, Activity, FileText, Settings, LogOut } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ const navItems = [
 
 export function SidebarV2() {
   const pathname = usePathname();
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
 
   const { data: cameras } = useQuery({
     queryKey: ["cameras"],
@@ -82,9 +82,27 @@ export function SidebarV2() {
           href="/app/admin"
           className="mt-3.5 text-center text-[11.5px] text-[oklch(42%_0.01_265)] hover:text-[oklch(58%_0.01_265)] transition-colors"
         >
-          Super Admin login &rarr;
+          Admin &rarr;
         </Link>
       )}
+
+      <div className="mt-3.5 pt-3.5 border-t border-[oklch(22%_0.015_265)] flex flex-col gap-1">
+        {user?.username && (
+          <div className="px-3 py-1 text-[11.5px] text-[oklch(50%_0.01_265)] truncate">
+            {user.username}
+          </div>
+        )}
+        <button
+          onClick={() => {
+            api.logout().catch(() => {});
+            logout();
+          }}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-[oklch(58%_0.01_265)] hover:text-[oklch(70.4%_0.191_22.216)] hover:bg-[oklch(18%_0.015_265)] w-full transition-colors"
+        >
+          <LogOut size={18} />
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }
