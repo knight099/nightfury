@@ -77,7 +77,7 @@ export function SidebarV2() {
         </div>
       </div>
 
-      {user?.role !== "super_admin" && (
+      {user?.role === "super_admin" && (
         <Link
           href="/admin"
           className="mt-3.5 text-center text-[11.5px] text-[oklch(42%_0.01_265)] hover:text-[oklch(58%_0.01_265)] transition-colors"
