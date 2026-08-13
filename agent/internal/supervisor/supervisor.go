@@ -7,9 +7,14 @@ import (
 	"log"
 	"time"
 
+	"github.com/nightwatch/agent/internal/republish"
 	"github.com/nightwatch/agent/internal/rtsp"
 	"github.com/nightwatch/agent/internal/transport"
 )
+
+// publisherBufCap is the number of recent Annex-B frames each camera's local
+// republish buffer holds, ready to serve to a live-view WebRTC viewer.
+const publisherBufCap = 256
 
 // CameraSpec identifies a camera to stream from a local RTSP URL.
 type CameraSpec struct {
@@ -25,6 +30,11 @@ type Supervisor struct {
 	Primary  transport.Transport
 	Fallback transport.Transport
 	Decider  *transport.Decider
+
+	// Registry, if set, receives a copy of every frame keyed by camera ID so
+	// a local WebRTC viewer (webrtcsignal.HandleOffer) can serve live video
+	// directly from this process. Optional — nil disables local publishing.
+	Registry *republish.Registry
 }
 
 const (
@@ -35,6 +45,14 @@ const (
 // Run blocks until ctx is cancelled, returning ctx.Err().
 func (s *Supervisor) Run(ctx context.Context) error {
 	backoff := initialBackoff
+
+	if s.Registry != nil {
+		for _, cam := range s.Cameras {
+			if _, ok := s.Registry.Get(cam.ID); !ok {
+				s.Registry.Register(cam.ID, republish.NewPublisher(cam.ID, publisherBufCap))
+			}
+		}
+	}
 
 	for ctx.Err() == nil {
 		tp := s.Primary
@@ -79,6 +97,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 					OnFrame: func(payload []byte, keyframe bool) {
 						if err := tp.SendFrame(cam.ID, payload, keyframe); err != nil {
 							log.Printf("supervisor: send frame %s failed: %v", cam.ID, err)
+						}
+						if s.Registry != nil {
+							if pub, ok := s.Registry.Get(cam.ID); ok {
+								pub.Frames.Push(payload)
+							}
 						}
 					},
 				}

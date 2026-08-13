@@ -232,11 +232,17 @@ func main() {
 		slog.Warn("no cameras configured (AGENT_CAMERAS env var empty)")
 	}
 
+	// registry holds a short in-memory buffer of recent frames per camera so
+	// a live-view WebRTC viewer can be served directly from this process
+	// (see supervisor.Supervisor.Registry / webrtcsignal.HandleOffer).
+	registry := republish.NewRegistry()
+
 	sup := &supervisor.Supervisor{
 		Cameras:  cams,
 		Primary:  primary,
 		Fallback: fallback,
 		Decider:  &transport.Decider{},
+		Registry: registry,
 	}
 
 	pipelineEnv := append(os.Environ(),
@@ -260,19 +266,14 @@ func main() {
 			"pipeline_dir", cfg.PipelineDir, "python", pipelinePython)
 	}
 
-	// KNOWN GAP (intentional, documented): this registry is constructed
-	// empty and nothing publishes the edge box's own RTSP frames into it
-	// yet — wiring an RTSP reader up as a republish.Publisher is a follow-up
-	// task, out of scope here. Consequence: HandleOffer returns
-	// ErrCameraNotFound for EVERY camera on the edge path, always.
-	//
-	// That is safe rather than a regression because the failure is clean and
-	// fast: control.Client.handleOffer replies immediately with an explicit
-	// {"error": ...} signal_answer, so the backend's request_signal raises
-	// straight away (no 10s timeout wait) and camera_webrtc_offer falls
-	// through to the relay-VM proxy path, which keeps working exactly as it
-	// did before this branch.
-	registry := republish.NewRegistry()
+	// registry is populated by sup.Run (each camera's RTSP frames are pushed
+	// into its Publisher alongside the existing remote-transport send) —
+	// see supervisor.Supervisor.Registry. If a camera is never opened
+	// (transport down, RTSP unreachable), HandleOffer still fails cleanly
+	// and fast for it: control.Client.handleOffer replies immediately with
+	// an explicit {"error": ...} signal_answer, so the backend's
+	// request_signal raises straight away (no 10s timeout wait) and
+	// camera_webrtc_offer falls through to the relay-VM proxy path.
 	viewer := webrtcsignal.NewViewerServer(cfg.StreamTokenSecret, registry)
 	controlClient := control.NewClient(backend, tok.DeviceToken, viewer)
 	go func() {
