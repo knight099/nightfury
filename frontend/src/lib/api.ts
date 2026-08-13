@@ -313,6 +313,22 @@ class ApiClient {
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }[]>(`/api/admin/orgs${qs}`);
   }
 
+  async adminGetOrgsHealth() {
+    return this.request<
+      {
+        org_id: string;
+        name: string;
+        plan: string;
+        camera_count: number;
+        cameras_online: number;
+        cameras_offline: number;
+        events_last_24h: number;
+        events_last_7d: number;
+        last_event_at: string | null;
+      }[]
+    >("/api/admin/orgs-health");
+  }
+
   async adminGetUsers(params?: { org_id?: string; role?: string; include_deleted?: boolean }) {
     const qs = new URLSearchParams(
       Object.entries(params || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
