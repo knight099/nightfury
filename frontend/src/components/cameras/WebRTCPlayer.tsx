@@ -22,9 +22,21 @@ export function WebRTCPlayer({ cameraId, className, onError }: Props) {
 
     async function connect() {
       try {
-        const pc = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-        });
+        let iceServers: RTCIceServer[] = [
+          { urls: "stun:stun.l.google.com:19302" },
+        ];
+        try {
+          const iceResult = await api.getIceServers();
+          if (iceResult.iceServers?.length) {
+            iceServers = iceResult.iceServers;
+          }
+        } catch {
+          // TURN is a fallback path, not a hard requirement — if minting
+          // credentials fails, proceed STUN-only rather than blocking live view.
+        }
+        if (cancelled) return;
+
+        const pc = new RTCPeerConnection({ iceServers });
         pcRef.current = pc;
 
         pc.addTransceiver("video", { direction: "recvonly" });

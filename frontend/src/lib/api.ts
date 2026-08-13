@@ -163,6 +163,10 @@ class ApiClient {
     });
   }
 
+  async getIceServers(): Promise<{ iceServers: RTCIceServer[] }> {
+    return this.request<{ iceServers: RTCIceServer[] }>("/api/webrtc/ice-servers");
+  }
+
   // Events
   async getEvents(params: Record<string, string | number | undefined> = {}) {
     const qs = new URLSearchParams(

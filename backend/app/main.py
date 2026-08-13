@@ -27,6 +27,7 @@ from app.api.chat import router as chat_router
 from app.api.devices import router as devices_router
 from app.api.edge_uploads import router as edge_uploads_router
 from app.api.edge_credentials import router as edge_credentials_router
+from app.api.webrtc import router as webrtc_router
 from app.api.agent_control import router as agent_control_router
 from app.ws.events import router as ws_router
 from app.services.digest.scheduler import (
@@ -130,6 +131,7 @@ app.include_router(chat_router)
 app.include_router(devices_router)
 app.include_router(edge_uploads_router)
 app.include_router(edge_credentials_router)
+app.include_router(webrtc_router)
 app.include_router(agent_control_router)
 app.include_router(ws_router)
 

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     stream_token_secret: str = "change-me-stream-secret"
     stream_token_ttl_seconds: int = 900
 
+    # TURN fallback relay (coturn) for WebRTC live view when a direct P2P
+    # connection fails. turn_shared_secret must match coturn's
+    # static-auth-secret (see deploy/coturn/turnserver.conf). Empty
+    # turn_url disables minting — browsers fall back to STUN-only.
+    turn_url: str = ""
+    turn_shared_secret: str = ""
+    turn_credential_ttl_seconds: int = 600
+
     super_admin_username: str = "super_nightvision"
     super_admin_password: str = ""
 

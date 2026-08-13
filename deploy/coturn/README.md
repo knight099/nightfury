@@ -5,20 +5,21 @@ browser and edge box fails (symmetric NAT/CGNAT).
 
 ## Scope
 
-**This task sets up the coturn server itself, and nothing else.**
+**Backend + frontend wiring is in place; the agent/relay side is not.**
 
-No code in this branch mints or uses TURN credentials — not the backend, not
-the agent, not the frontend. There is no `TURN_SHARED_SECRET` reader, no
-credential-minting endpoint, and no `turn:` URL anywhere in the ICE server
-configuration (the agent's `webrtcsignal` still uses a STUN server only).
-
-All of that is future work:
-- Backend: read `TURN_SHARED_SECRET`/`TURN_URL` and expose short-lived
-  time-limited TURN credentials (the coturn `use-auth-secret` scheme).
-- Frontend + agent: include those credentials as an ICE server on the
-  `RTCPeerConnection` config.
-
-Until that exists, the server deployed here is inert — nothing will use it.
+- Backend (`app/services/turn_credentials.py`, `GET /api/webrtc/ice-servers`)
+  mints short-lived time-limited TURN credentials using coturn's
+  `use-auth-secret` scheme, reading `turn_url`/`turn_shared_secret` from
+  settings.
+- Frontend (`WebRTCPlayer.tsx`) fetches `/api/webrtc/ice-servers` before
+  constructing its `RTCPeerConnection` and includes the returned TURN entry
+  alongside STUN — falling back to STUN-only if the fetch fails, so a TURN
+  outage never blocks live view outright.
+- **Not yet done:** the agent's and relay's own `webrtcsignal` peer
+  connections (`agent/webrtcsignal/answer.go`, `relay/webrtcsignal/viewer.go`)
+  still hardcode STUN only. For a connection to survive symmetric NAT/CGNAT
+  on *both* ends, that side needs the same TURN wiring too — tracked as
+  separate follow-up work, not done here.
 
 ## Setup
 1. `apt install coturn` on a small public-IP VM.
@@ -27,6 +28,6 @@ Until that exists, the server deployed here is inert — nothing will use it.
    referenced in the config.
 3. Copy `nightwatch-coturn.service` to `/etc/systemd/system/`,
    `systemctl enable --now nightwatch-coturn`.
-4. (Future) Once the backend gains a TURN credential endpoint, set
-   `TURN_SHARED_SECRET` (same value as `static-auth-secret`) and `TURN_URL`
-   in Backend's environment. Nothing reads these variables today.
+4. Set `TURN_SHARED_SECRET` (same value as `static-auth-secret`) and
+   `TURN_URL` (e.g. `turn.yourdomain.com:3478`) in Backend's environment —
+   `GET /api/webrtc/ice-servers` returns STUN-only until both are set.
