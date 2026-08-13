@@ -20,6 +20,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
+import { useHydrated } from "@/lib/useHydrated";
 import { api } from "@/lib/api";
 import { isNewUiEnabled } from "@/lib/flags";
 import { cn } from "@/lib/utils";
@@ -53,11 +54,13 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
   const { token, user, logout } = useAuthStore();
+  const hydrated = useHydrated();
   const collapsed = useChatPanelState((s) => s.collapsed);
   const toggleChat = useChatPanelState((s) => s.toggle);
   const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!token) {
       router.replace("/login");
     } else if (isNewUiEnabled()) {
@@ -69,14 +72,17 @@ export function AppShell({
     } else {
       api.setToken(token);
     }
-  }, [token, user, router, requireRole]);
+  }, [hydrated, token, user, router, requireRole]);
 
   useEffect(() => {
     setMoreOpen(false);
   }, [pathname]);
 
+  if (!hydrated) return null;
   if (!token || user?.must_change_password) return null;
   if (requireRole && user?.role !== requireRole) return null;
+
+  api.setToken(token);
 
   return (
     <div className="flex min-h-screen">

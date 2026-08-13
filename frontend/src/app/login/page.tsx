@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
+import { useHydrated } from "@/lib/useHydrated";
+
+function destinationFor(user: { must_change_password?: boolean } | null): string {
+  return user?.must_change_password ? "/change-password" : "/dashboard";
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setAuth } = useAuthStore();
+  const { setAuth, token, user } = useAuthStore();
+  const hydrated = useHydrated();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -15,6 +21,12 @@ export default function LoginPage() {
   const [isSignup, setIsSignup] = useState(false);
   const [name, setName] = useState("");
   const [orgName, setOrgName] = useState("");
+
+  useEffect(() => {
+    if (!hydrated || !token) return;
+    api.setToken(token);
+    router.replace(destinationFor(user));
+  }, [hydrated, token, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,17 +42,15 @@ export default function LoginPage() {
       }
       api.setToken(result.token);
       setAuth(result.token, result.user);
-      if (result.user.must_change_password) {
-        router.push("/change-password");
-      } else {
-        router.push("/dashboard");
-      }
+      router.push(destinationFor(result.user));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
   };
+
+  if (hydrated && token) return null;
 
   return (
     <div className="min-h-dvh flex items-center justify-center bg-[#0D0D0D] px-4 relative overflow-hidden">

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
+import { useHydrated } from "@/lib/useHydrated";
 import { api } from "@/lib/api";
 import { isNewUiEnabled } from "@/lib/flags";
 import { SidebarV2 } from "@/components/v2/SidebarV2";
@@ -10,8 +11,10 @@ import { SidebarV2 } from "@/components/v2/SidebarV2";
 export function AppShellV2({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { token, user } = useAuthStore();
+  const hydrated = useHydrated();
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!isNewUiEnabled()) {
       router.replace("/dashboard");
     } else if (!token) {
@@ -21,9 +24,12 @@ export function AppShellV2({ children }: { children: React.ReactNode }) {
     } else {
       api.setToken(token);
     }
-  }, [token, user, router]);
+  }, [hydrated, token, user, router]);
 
+  if (!hydrated) return null;
   if (!isNewUiEnabled() || !token || user?.must_change_password) return null;
+
+  api.setToken(token);
 
   return (
     <div className="flex min-h-screen bg-[oklch(9%_0.015_265)] text-[oklch(97%_0.005_265)]">
