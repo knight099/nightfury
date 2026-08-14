@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 
@@ -6,6 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.database import async_session_factory
 from app.services.audit_log_service import audit_log_service
+
+logger = logging.getLogger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -47,17 +50,29 @@ class ImpersonationAuditMiddleware(BaseHTTPMiddleware):
         if not impersonated_by:
             return response
 
-        async with async_session_factory() as db:
-            await audit_log_service.record(
-                db,
-                actor_user_id=uuid.UUID(impersonated_by["user_id"]),
-                actor_username=impersonated_by["username"],
-                method=request.method,
-                path=request.url.path,
-                status_code=response.status_code,
-                target_user_id=uuid.UUID(session["user_id"]),
-                target_org_id=uuid.UUID(session["org_id"]) if session.get("org_id") else None,
+        # The route's own Depends(get_db) has already committed the actual
+        # mutation by the time we get here (call_next() has returned). An
+        # audit-write failure below (transient DB blip, etc.) must never
+        # turn that already-successful mutation into a client-visible error
+        # — log it and let the real response through regardless.
+        try:
+            async with async_session_factory() as db:
+                await audit_log_service.record(
+                    db,
+                    actor_user_id=uuid.UUID(impersonated_by["user_id"]),
+                    actor_username=impersonated_by["username"],
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    target_user_id=uuid.UUID(session["user_id"]),
+                    target_org_id=uuid.UUID(session["org_id"]) if session.get("org_id") else None,
+                )
+                await db.commit()
+        except Exception:
+            logger.exception(
+                "Failed to write impersonation audit log for %s %s",
+                request.method,
+                request.url.path,
             )
-            await db.commit()
 
         return response
