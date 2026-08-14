@@ -313,7 +313,8 @@ class ApiClient {
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string; deleted_at: string | null }[]>(`/api/admin/orgs${qs}`);
   }
 
-  async adminGetOrgsHealth() {
+  async adminGetOrgsHealth(includeDeleted = false) {
+    const qs = includeDeleted ? "?include_deleted=true" : "";
     return this.request<
       {
         org_id: string;
@@ -324,9 +325,9 @@ class ApiClient {
         cameras_offline: number;
         events_last_24h: number;
         events_last_7d: number;
-        last_event_at: string | null;
+        deleted_at: string | null;
       }[]
-    >("/api/admin/orgs-health");
+    >(`/api/admin/orgs-health${qs}`);
   }
 
   async adminGetUsers(params?: { org_id?: string; role?: string; include_deleted?: boolean }) {

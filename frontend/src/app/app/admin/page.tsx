@@ -92,7 +92,7 @@ export default function AdminPageV2() {
           ) : (orgsHealth ?? []).length > 0 ? (
             <div className="flex flex-col gap-2">
               {(orgsHealth ?? []).map((o) => {
-                const stale = !o.last_event_at || new Date(o.last_event_at).getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000;
+                const stale = o.events_last_7d === 0;
                 return (
                   <Link
                     key={o.org_id}
