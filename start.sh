@@ -168,6 +168,11 @@ else
     cleanup
 fi
 
+V2_UI_ENABLED="no"
+if [ -f "$FRONTEND_DIR/.env.local" ] && grep -qE '^NEXT_PUBLIC_NEW_UI=true' "$FRONTEND_DIR/.env.local"; then
+    V2_UI_ENABLED="yes"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════╗${NC}"
@@ -194,6 +199,18 @@ echo -e "${GREEN}║    3. Agent tunnels NVR → relay → worker  ║${NC}"
 echo -e "${GREEN}║  Direct RTSP cameras:                     ║${NC}"
 echo -e "${GREEN}║    Add at /cameras (mode: rtsp_pull)      ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════╝${NC}"
+echo ""
+if [ "$V2_UI_ENABLED" = "yes" ]; then
+    echo -e "${CYAN}V2 UI enabled (NEXT_PUBLIC_NEW_UI=true) — legacy routes redirect to /app${NC}"
+    echo -e "${CYAN}  Test AI:          http://localhost:3000/app/test-camera${NC}"
+    echo -e "${CYAN}  Admin dashboard:  http://localhost:3000/app/admin (super_admin only)${NC}"
+    echo -e "${CYAN}    Org health, force-logout, session list, delete/restore org${NC}"
+    echo -e "${CYAN}    \"Login as\" impersonation from an org's user list${NC}"
+    echo -e "${CYAN}    (still missing from V2: /events, /alerts, /cameras/connect)${NC}"
+else
+    echo -e "${CYAN}V2 UI disabled — set NEXT_PUBLIC_NEW_UI=true in frontend/.env.local to try${NC}"
+    echo -e "${CYAN}the new admin dashboard, Test AI, and \"Login as\" impersonation.${NC}"
+fi
 echo -e "\n${YELLOW}Press Ctrl+C to stop all services${NC}\n"
 
 wait
