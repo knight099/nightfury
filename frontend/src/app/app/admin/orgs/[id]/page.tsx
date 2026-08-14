@@ -16,8 +16,8 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
   const isSuperAdmin = user?.role === "super_admin";
 
   const { data: orgsHealth, isLoading: healthLoading, isError: healthError } = useQuery({
-    queryKey: ["admin", "orgs-health"],
-    queryFn: () => api.adminGetOrgsHealth(),
+    queryKey: ["admin", "orgs-health", "include-deleted"],
+    queryFn: () => api.adminGetOrgsHealth(true),
     enabled: isSuperAdmin,
   });
   const org = orgsHealth?.find((o) => o.org_id === id);
@@ -53,6 +53,15 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "orgs-health"] }),
   });
 
+  const handleDeleteOrg = () => {
+    const confirmed = window.confirm(
+      `Delete ${org?.name ?? "this org"}? This will also disable every user, camera, site, and alert rule in this org. This can be undone via Restore.`
+    );
+    if (confirmed) {
+      deleteOrg.mutate();
+    }
+  };
+
   if (!isSuperAdmin) {
     return (
       <div className="max-w-[1040px] mx-auto px-12 py-12 text-sm text-[oklch(55%_0.01_265)]">
@@ -73,7 +82,19 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
         <div className="mb-8 text-sm text-[oklch(70.4%_0.191_22.216)]">Couldn&apos;t load org health.</div>
       ) : org ? (
         <div className="mb-8">
-          <div className="text-[28px] font-bold tracking-tight mb-1">{org.name}</div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="text-[28px] font-bold tracking-tight">{org.name}</div>
+            {org.deleted_at && (
+              <div className="text-[11px] font-semibold px-2 py-1 rounded-full bg-[oklch(70.4%_0.191_22.216_/_0.16)] text-[oklch(70.4%_0.191_22.216)]">
+                Deleted
+              </div>
+            )}
+          </div>
+          {org.deleted_at && (
+            <div className="text-[12px] text-[oklch(58%_0.01_265)] mb-1">
+              Deleted at {new Date(org.deleted_at).toLocaleString()}
+            </div>
+          )}
           <div className="text-sm text-[oklch(58%_0.01_265)]">
             {org.camera_count} cameras ({org.cameras_online} online) · {org.events_last_24h} events (24h) ·{" "}
             {org.events_last_7d} events (7d)
@@ -85,7 +106,7 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
 
       <div className="flex gap-2 mb-2">
         <button
-          onClick={() => deleteOrg.mutate()}
+          onClick={handleDeleteOrg}
           disabled={deleteOrg.isPending}
           className="text-sm font-semibold px-4 py-2 rounded-lg text-[oklch(70.4%_0.191_22.216)] border border-[oklch(70.4%_0.191_22.216)] disabled:opacity-50"
         >
