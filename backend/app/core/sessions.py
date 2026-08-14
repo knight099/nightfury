@@ -42,6 +42,7 @@ class SessionManager:
         org_id: str | None,
         ip: str,
         user_agent: str,
+        impersonated_by: dict | None = None,
     ) -> str:
         """
         Create a new session. Returns an encrypted opaque token.
@@ -60,6 +61,7 @@ class SessionManager:
             "created_at": now,
             "last_active": now,
             "ip": ip,
+            "impersonated_by": impersonated_by,
         }
 
         # Store session in Redis with TTL

@@ -40,6 +40,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired or invalid",
         )
+    request.state.session = session
 
     # Load user from DB
     user_id = session["user_id"]
