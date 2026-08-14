@@ -3,7 +3,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +16,9 @@ from app.models.camera import Camera
 from app.models.event import Event
 from app.models.organization import Organization
 from app.models.user import User
-from app.schemas.auth import ChangePasswordRequest, UpdateUserRequest, UserResponse
+from app.schemas.auth import ChangePasswordRequest, TokenResponse, UpdateUserRequest, UserResponse
 from app.schemas.organization import CreateOrgRequest, OrgResponse, UpdateOrgRequest
+from app.services.audit_log_service import audit_log_service
 from app.services.soft_delete_service import soft_delete_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -287,6 +288,59 @@ async def restore_user(
         raise HTTPException(status_code=400, detail="User is not deleted")
     await soft_delete_service.restore_user(target, db)
     return UserResponse.model_validate(target)
+
+
+@router.post("/users/{user_id}/impersonate", response_model=TokenResponse)
+async def impersonate_user(
+    user_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Mint a real session for the target user, tagged with who's impersonating.
+    No nested impersonation, no impersonating a super_admin or a user in a
+    soft-deleted org."""
+    _require_super_admin(user)
+
+    if request.state.session.get("impersonated_by"):
+        raise HTTPException(status_code=400, detail="Exit your current impersonation session before starting another.")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target or target.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role == "super_admin":
+        raise HTTPException(status_code=403, detail="Cannot impersonate a super admin")
+    if target.org_id:
+        org_result = await db.execute(select(Organization).where(Organization.id == target.org_id))
+        org = org_result.scalar_one_or_none()
+        if org and org.deleted_at is not None:
+            raise HTTPException(status_code=400, detail="Cannot impersonate a user in a deleted org")
+
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "unknown")
+    token = await session_manager.create_session(
+        str(target.id),
+        target.username,
+        target.role,
+        str(target.org_id) if target.org_id else None,
+        ip,
+        ua,
+        impersonated_by={"user_id": str(user.id), "username": user.username},
+    )
+
+    await audit_log_service.record(
+        db,
+        actor_user_id=user.id,
+        actor_username=user.username,
+        method="IMPERSONATE",
+        path=f"/api/admin/users/{user_id}/impersonate",
+        status_code=200,
+        target_user_id=target.id,
+        target_org_id=target.org_id,
+    )
+
+    return TokenResponse(token=token, user=UserResponse.model_validate(target))
 
 
 @router.post("/users/{user_id}/change-password", status_code=200)

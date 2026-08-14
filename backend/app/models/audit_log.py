@@ -23,6 +23,6 @@ class AuditLog(Base, TimestampMixin):
     actor_username: Mapped[str] = mapped_column(Text, nullable=False)
     target_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     target_org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    method: Mapped[str] = mapped_column(String(20), nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)

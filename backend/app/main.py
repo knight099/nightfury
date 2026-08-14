@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.core.database import async_session_factory, engine
-from app.core.middleware import RequestIDMiddleware, TimingMiddleware
+from app.core.middleware import ImpersonationAuditMiddleware, RequestIDMiddleware, TimingMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security import hash_password
 from app.models.user import User
@@ -106,6 +106,7 @@ app = FastAPI(
 # including errors thrown by inner middleware (rate limiter, etc.).
 app.add_middleware(TimingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(ImpersonationAuditMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
