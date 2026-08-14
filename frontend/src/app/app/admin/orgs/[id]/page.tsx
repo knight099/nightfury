@@ -2,6 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -9,7 +10,8 @@ import { useAuthStore } from "@/lib/store";
 
 export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { user } = useAuthStore();
+  const { user, startImpersonation } = useAuthStore();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -51,6 +53,14 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
   const restoreOrg = useMutation({
     mutationFn: () => api.adminRestoreOrg(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "orgs-health"] }),
+  });
+
+  const impersonate = useMutation({
+    mutationFn: (userId: string) => api.adminImpersonateUser(userId),
+    onSuccess: (data) => {
+      startImpersonation(data.token, data.user);
+      router.push("/app");
+    },
   });
 
   const handleDeleteOrg = () => {
@@ -161,12 +171,23 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
                   >
                     Force logout
                   </button>
-                  {/* Project F (separate plan) adds a "Login as" button here */}
+                  <button
+                    onClick={() => impersonate.mutate(u.id)}
+                    disabled={impersonate.isPending}
+                    className="text-[12px] text-[oklch(85%_0.16_84)] disabled:opacity-50"
+                  >
+                    Login as
+                  </button>
                 </div>
               </div>
               {forceLogout.isError && forceLogout.variables === u.id && (
                 <div className="mt-2 text-[11px] text-[oklch(70.4%_0.191_22.216)]">
                   Force logout failed: {forceLogout.error instanceof Error ? forceLogout.error.message : "unknown error"}. Try again.
+                </div>
+              )}
+              {impersonate.isError && impersonate.variables === u.id && (
+                <div className="mt-2 text-[12px] text-[oklch(70.4%_0.191_22.216)]">
+                  {impersonate.error instanceof Error ? impersonate.error.message : "Couldn't start impersonation."}
                 </div>
               )}
               {expandedUserId === u.id && (
