@@ -7,6 +7,7 @@ import { useHydrated } from "@/lib/useHydrated";
 import { api } from "@/lib/api";
 import { isNewUiEnabled } from "@/lib/flags";
 import { SidebarV2 } from "@/components/v2/SidebarV2";
+import { ImpersonationBanner } from "@/components/v2/ImpersonationBanner";
 
 export function AppShellV2({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -32,9 +33,12 @@ export function AppShellV2({ children }: { children: React.ReactNode }) {
   api.setToken(token);
 
   return (
-    <div className="flex min-h-screen bg-[oklch(9%_0.015_265)] text-[oklch(97%_0.005_265)]">
-      <SidebarV2 />
-      <main className="flex-1 overflow-y-auto min-w-0">{children}</main>
+    <div className="flex flex-col min-h-screen bg-[oklch(9%_0.015_265)] text-[oklch(97%_0.005_265)]">
+      <ImpersonationBanner />
+      <div className="flex flex-1 min-h-0">
+        <SidebarV2 />
+        <main className="flex-1 overflow-y-auto min-w-0">{children}</main>
+      </div>
     </div>
   );
 }
