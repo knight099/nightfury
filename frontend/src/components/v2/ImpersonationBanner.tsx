@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 
 export function ImpersonationBanner() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, originalToken, exitImpersonation } = useAuthStore();
 
   if (!originalToken) return null;
@@ -13,6 +15,7 @@ export function ImpersonationBanner() {
   const handleExit = () => {
     api.logout().catch(() => {});
     exitImpersonation();
+    queryClient.clear();
     router.push("/app/admin");
   };
 

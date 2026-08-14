@@ -170,6 +170,7 @@ class SessionManager:
                     "ip": session.get("ip", ""),
                     "created_at": session.get("created_at", 0),
                     "last_active": session.get("last_active", 0),
+                    "impersonated_by": session.get("impersonated_by"),
                 })
 
         return sessions

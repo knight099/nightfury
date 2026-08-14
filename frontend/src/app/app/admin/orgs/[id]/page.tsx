@@ -59,6 +59,7 @@ export default function AdminOrgDetailPageV2({ params }: { params: Promise<{ id:
     mutationFn: (userId: string) => api.adminImpersonateUser(userId),
     onSuccess: (data) => {
       startImpersonation(data.token, data.user);
+      queryClient.clear();
       router.push("/app");
     },
   });
