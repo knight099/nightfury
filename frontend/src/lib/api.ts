@@ -378,6 +378,12 @@ class ApiClient {
     return this.request<User>(`/api/admin/users/${userId}/restore`, { method: "POST" });
   }
 
+  async adminImpersonateUser(userId: string) {
+    return this.request<{ token: string; user: User }>(`/api/admin/users/${userId}/impersonate`, {
+      method: "POST",
+    });
+  }
+
   async adminCreateOrg(data: { name: string; plan?: string }) {
     return this.request<{ id: string; name: string; slug: string; plan: string; created_at: string }>("/api/admin/orgs", {
       method: "POST",
