@@ -46,15 +46,15 @@ async def list_all_orgs(
 async def orgs_health(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    include_deleted: bool = Query(False),
 ):
     """Per-org camera/event health snapshot — super_admin only."""
     _require_super_admin(user)
 
-    orgs = (
-        await db.execute(
-            select(Organization).where(Organization.deleted_at.is_(None)).order_by(Organization.name)
-        )
-    ).scalars().all()
+    orgs_q = select(Organization)
+    if not include_deleted:
+        orgs_q = orgs_q.where(Organization.deleted_at.is_(None))
+    orgs = (await db.execute(orgs_q.order_by(Organization.name))).scalars().all()
 
     cam_rows = (
         await db.execute(
@@ -93,19 +93,11 @@ async def orgs_health(
             )
         ).all()
     }
-    last_ev_map = {
-        r.org_id: r.last
-        for r in (
-            await db.execute(select(Event.org_id, func.max(Event.timestamp).label("last")).group_by(Event.org_id))
-        ).all()
-    }
-
     result = []
     for org in orgs:
         cam = cam_map.get(org.id)
         camera_count = cam.camera_count if cam else 0
         cameras_online = int(cam.cameras_online) if cam and cam.cameras_online else 0
-        last_event_at = last_ev_map.get(org.id)
         result.append(
             {
                 "org_id": str(org.id),
@@ -116,7 +108,7 @@ async def orgs_health(
                 "cameras_offline": camera_count - cameras_online,
                 "events_last_24h": ev24_map.get(org.id, 0),
                 "events_last_7d": ev7_map.get(org.id, 0),
-                "last_event_at": last_event_at.isoformat() if last_event_at else None,
+                "deleted_at": org.deleted_at.isoformat() if org.deleted_at else None,
             }
         )
     return result
