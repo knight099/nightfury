@@ -12,6 +12,13 @@ class ChatRequest(BaseModel):
     event_id: uuid.UUID | None = None
     org_id: uuid.UUID | None = None  # super_admin may scope to an org
 
+    # Site-wide Ask: answer from everything that happened at a site in a
+    # window ("anything near the food court between 9 and 11?") rather than
+    # from one camera's recent event types.
+    site_id: uuid.UUID | None = None
+    start: datetime | None = None
+    end: datetime | None = None
+
 
 class ChatMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
