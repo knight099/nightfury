@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, permitted_site_ids
 from app.core.redis import get_redis
 from app.models.digest import Digest
 from app.models.digest_preferences import DigestPreferences
@@ -28,7 +28,17 @@ router = APIRouter(prefix="/api/digests", tags=["digests"])
 def _scope(query, current: User):
     if current.role == "super_admin":
         return query
-    return query.where(Digest.org_id == current.org_id)
+    query = query.where(Digest.org_id == current.org_id)
+
+    site_ids = permitted_site_ids(current)
+    if site_ids is None:
+        return query
+    # A site-restricted account sees only digests generated FOR one of its
+    # sites. Org-wide digests (site_id NULL — the scheduled morning/evening
+    # runs) are deliberately excluded rather than shown: they summarise every
+    # event in the organisation, so showing one would leak exactly what the
+    # site restriction exists to prevent.
+    return query.where(Digest.site_id.in_(site_ids))
 
 
 async def _redis_dep():
@@ -133,6 +143,21 @@ async def create_on_demand(
         raise HTTPException(400, f"Range cannot exceed {settings.digest_max_range_days} days")
     if current.org_id is None:
         raise HTTPException(400, "super_admin cannot run on-demand digests")
+    # Generation does not pass through _scope, so the restriction is applied
+    # here too — otherwise a site-scoped user could not *read* an org-wide
+    # digest but could still *create* one and then read it.
+    site_ids = permitted_site_ids(current)
+    if site_ids is not None:
+        if body.site_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="site_id is required — your account is restricted to specific sites",
+            )
+        if body.site_id not in site_ids:
+            raise HTTPException(
+                status_code=403, detail="You do not have access to that site"
+            )
+
     await _enforce_user_rate_limit(redis, current.id)
     digest = await service.generate(
         org_id=current.org_id,

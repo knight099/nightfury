@@ -30,6 +30,8 @@ class DigestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    # None = organisation-wide; set = this digest covers one site only.
+    site_id: uuid.UUID | None = None
     kind: DigestKind
     range_start: datetime
     range_end: datetime

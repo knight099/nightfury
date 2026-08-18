@@ -69,7 +69,7 @@ class DigestService:
             payload = build_quiet_payload(period_label)
             return await self._persist_and_deliver(
                 org=org, kind=kind, start=start, end=end, payload=payload,
-                event_count=0, requested_by=requested_by,
+                event_count=0, requested_by=requested_by, site_id=site_id,
             )
 
         # Sample down if needed
@@ -78,7 +78,7 @@ class DigestService:
 
         # Spend cap
         cost_estimate = 0.03  # matches APPROX_COST_PER_CALL_USD
-        allowed = await self.spend.try_charge(org_id, cost_estimate)
+        allowed = await self.spend.try_charge(org_id, cost_estimate, site_id=site_id)
         if not allowed:
             logger.warning("Spend cap reached for org %s — emitting degraded digest", org_id)
             payload = build_degraded_payload(
@@ -86,7 +86,7 @@ class DigestService:
             )
             return await self._persist_and_deliver(
                 org=org, kind=kind, start=start, end=end, payload=payload,
-                event_count=len(events_rows), requested_by=requested_by,
+                event_count=len(events_rows), requested_by=requested_by, site_id=site_id,
             )
 
         # Gemini call (with degraded fallback on failure)
@@ -102,7 +102,7 @@ class DigestService:
 
         return await self._persist_and_deliver(
             org=org, kind=kind, start=start, end=end, payload=payload,
-            event_count=len(events_rows), requested_by=requested_by,
+            event_count=len(events_rows), requested_by=requested_by, site_id=site_id,
         )
 
     async def _load_events(self, org_id, start, end, camera_ids, site_id):
@@ -139,10 +139,15 @@ class DigestService:
         return f"{start.strftime('%Y-%m-%d %H:%M')} – {end.strftime('%Y-%m-%d %H:%M')}"
 
     async def _persist_and_deliver(
-        self, *, org: Organization, kind, start, end, payload, event_count, requested_by
+        self, *, org: Organization, kind, start, end, payload, event_count, requested_by,
+        site_id=None,
     ) -> Digest:
         digest = Digest(
             org_id=org.id,
+            # Recorded at generation time — a digest computed over the whole
+            # org cannot be narrowed to one site afterwards, so this is the
+            # only point at which the scope is knowable.
+            site_id=site_id,
             kind=kind,
             range_start=start,
             range_end=end,
