@@ -89,12 +89,10 @@ async def claim_device(
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
     """Customer enters NW-XXXX code to link a device to their org."""
-    if user.role == "super_admin":
-        if payload.org_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="super_admin must pass org_id",
-            )
+    # A super admin may claim a device into any org by naming it. Without
+    # org_id they fall through to their own org — they have one now, so
+    # claiming their own test hardware needs no org id.
+    if user.role == "super_admin" and payload.org_id is not None:
         org_id = payload.org_id
     elif user.org_id is not None:
         org_id = user.org_id

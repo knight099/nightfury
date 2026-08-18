@@ -10,6 +10,7 @@ from app.core.database import async_session_factory, engine
 from app.core.middleware import ImpersonationAuditMiddleware, RequestIDMiddleware, TimingMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security import hash_password
+from app.models.organization import Organization
 from app.models.user import User
 
 from app.api.auth import router as auth_router
@@ -46,8 +47,47 @@ logging.basicConfig(level=logging.INFO if not settings.debug else logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
+async def _get_or_create_super_org(session) -> Organization:
+    """The super admin's own organisation.
+
+    Super admin used to have org_id = NULL, which made every "my org" surface
+    (settings, sites, team, digests) return 400 for them — so they could not
+    add a camera or create a site to test with. Giving them a real org fixes
+    all of those at once and costs nothing elsewhere: org filtering is
+    bypassed by ROLE, not by a null org_id.
+    """
+    slug = "nightwatch-hq"
+    existing = (
+        await session.execute(select(Organization).where(Organization.slug == slug))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    org = Organization(name=settings.super_admin_org_name, slug=slug, plan="internal")
+    session.add(org)
+    await session.flush()
+    logger.info(f"Super admin org created: {org.name}")
+    return org
+
+
 async def seed_super_admin():
     async with async_session_factory() as session:
+        org = await _get_or_create_super_org(session)
+
+        # Repair EVERY super admin missing an org, not just the configured
+        # one. Extra super admins can be created through the admin UI, and one
+        # with a null org hits the same broken "my org" surfaces that this
+        # change exists to fix.
+        orphaned = (
+            await session.execute(
+                select(User).where(User.role == "super_admin", User.org_id.is_(None))
+            )
+        ).scalars().all()
+        for orphan in orphaned:
+            orphan.org_id = org.id
+            logger.info(f"Super admin adopted org: {orphan.username} -> {org.name}")
+        if orphaned:
+            await session.commit()
+
         result = await session.execute(
             select(User).where(User.username == settings.super_admin_username)
         )
@@ -56,7 +96,7 @@ async def seed_super_admin():
             return
 
         admin = User(
-            org_id=None,
+            org_id=org.id,
             username=settings.super_admin_username,
             password_hash=hash_password(settings.super_admin_password),
             name="Super Admin",
