@@ -52,24 +52,52 @@ def _signature(proposal: dict) -> tuple:
 def group_proposals(rows) -> list[ReviewGroup]:
     """Group proposals by scene type; split outliers into their own cards."""
     buckets: dict[str, list] = {}
+    needs_input_rows: list = []
+
     for row in rows:
-        needs_input = (
-            row.status in ("needs_input", "failed", "pending")
-            or row.scene_type in (None, "other")
-            or (row.confidence or 0.0) < MIN_CONFIDENCE
+        # Eligible for normal grouping: proposed + valid scene_type + good confidence
+        is_eligible = (
+            row.status == "proposed"
+            and row.scene_type not in (None, "other")
+            and (row.confidence or 0.0) >= MIN_CONFIDENCE
         )
-        key = NEEDS_INPUT if needs_input else row.scene_type
-        buckets.setdefault(key, []).append(row)
+        # Terminal states always go in their scene-type group for visibility
+        is_terminal = row.status in ("approved", "rejected")
+
+        if is_eligible or is_terminal:
+            buckets.setdefault(row.scene_type, []).append(row)
+        else:
+            needs_input_rows.append(row)
 
     groups: list[ReviewGroup] = []
+
+    # Add needs_input group if there are any rows
+    if needs_input_rows:
+        groups.append(
+            ReviewGroup(
+                scene_type=NEEDS_INPUT,
+                label=LABELS[NEEDS_INPUT],
+                bulk_approvable=False,
+                proposal_ids=[m.id for m in needs_input_rows],
+            )
+        )
+
+    # Process scene-type buckets
     for key, members in sorted(buckets.items()):
-        if key == NEEDS_INPUT:
+        # Compute majority from proposed rows only
+        proposed_members = [m for m in members if m.status == "proposed"]
+        terminal_members = [m for m in members if m.status in ("approved", "rejected")]
+
+        if not proposed_members:
+            # Only terminal rows, no proposed - show them but not bulk-approvable
             groups.append(
                 ReviewGroup(
-                    scene_type=NEEDS_INPUT,
-                    label=LABELS[NEEDS_INPUT],
+                    scene_type=key,
+                    label=LABELS.get(key, key),
                     bulk_approvable=False,
-                    proposal_ids=[m.id for m in members],
+                    shared_config={},
+                    proposal_ids=[m.id for m in terminal_members],
+                    differing_proposal_ids=[],
                 )
             )
             continue
@@ -77,23 +105,23 @@ def group_proposals(rows) -> list[ReviewGroup]:
         # The majority signature defines the group; everything else is an
         # outlier the operator reviews individually.
         counts: dict[tuple, int] = {}
-        for m in members:
+        for m in proposed_members:
             counts[_signature(m.proposal)] = counts.get(_signature(m.proposal), 0) + 1
         majority = max(counts, key=lambda s: (counts[s], str(s)))
 
-        agreeing = [m for m in members if _signature(m.proposal) == majority]
-        differing = [m for m in members if _signature(m.proposal) != majority]
-        template = agreeing[0].proposal
+        proposed_agreeing = [m for m in proposed_members if _signature(m.proposal) == majority]
+        proposed_differing = [m for m in proposed_members if _signature(m.proposal) != majority]
+        template = proposed_agreeing[0].proposal
 
         groups.append(
             ReviewGroup(
                 scene_type=key,
                 label=LABELS.get(key, key),
                 # A group of one is not a bulk action; review it directly.
-                bulk_approvable=len(agreeing) > 1,
+                bulk_approvable=len(proposed_agreeing) > 1,
                 shared_config={f: template.get(f) for f in SHARED_FIELDS},
-                proposal_ids=[m.id for m in agreeing],
-                differing_proposal_ids=[m.id for m in differing],
+                proposal_ids=[m.id for m in (proposed_agreeing + terminal_members)],
+                differing_proposal_ids=[m.id for m in proposed_differing],
             )
         )
     return groups
