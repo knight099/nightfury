@@ -23,6 +23,7 @@ from app.api.settings import router as settings_router
 from app.api.test_camera import router as test_camera_router
 from app.api.agents import router as agents_router
 from app.api.camera_connections import router as camera_connections_router
+from app.api.camera_setup import router as camera_setup_router
 from app.api.fleet import router as fleet_router
 from app.api.digests import router as digests_router
 from app.api.chat import router as chat_router
@@ -169,6 +170,7 @@ app.include_router(test_camera_router)
 app.include_router(agents_router)
 app.include_router(fleet_router)
 app.include_router(camera_connections_router)
+app.include_router(camera_setup_router)
 app.include_router(digests_router)
 app.include_router(chat_router)
 app.include_router(devices_router)
