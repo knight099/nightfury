@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # is the confirmed-working, account-accessible vision model.
     ollama_test_camera_model: str = "minimax-m3"
     digest_daily_spend_cap_usd: float = 1.0
+    # Per-site daily AI spend cap. 0 disables it (org cap only), which is the
+    # single-site default. On an estate this is what stops one busy floor
+    # exhausting the whole org's budget and degrading every other floor.
+    digest_site_daily_spend_cap_usd: float = 0.0
     digest_on_demand_per_user_hourly_limit: int = 10
     digest_max_events_per_window: int = 200
     digest_max_range_days: int = 7

@@ -47,12 +47,14 @@ class _FailingChatClient:
 
 
 class _AlwaysAllowSpend:
-    async def try_charge(self, org_id, cost_usd):
+    # site_id is optional on SpendTracker.try_charge (per-site budgets); these
+    # doubles accept it so they stay compatible with the real signature.
+    async def try_charge(self, org_id, cost_usd, site_id=None):
         return True
 
 
 class _NeverAllowSpend:
-    async def try_charge(self, org_id, cost_usd):
+    async def try_charge(self, org_id, cost_usd, site_id=None):
         return False
 
 
