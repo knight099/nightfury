@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_user, require_role, scope_to_sites
 from app.models.camera import Camera
 from app.models.site import Site
 from app.models.user import User
@@ -30,6 +30,9 @@ async def list_sites(
             q = q.where(Site.org_id == org_id)
     else:
         q = q.where(Site.org_id == user.org_id)
+    # A site-scoped user should not even be able to enumerate the estate's
+    # other sites — the list is how they would discover what exists.
+    q = scope_to_sites(q, Site.id, user)
 
     result = await db.execute(q.order_by(Site.created_at.desc()))
     return [SiteResponse.model_validate(s) for s in result.scalars().all()]
@@ -66,6 +69,7 @@ async def update_site(
     require_role(user, "admin")
 
     q = select(Site).where(Site.id == site_id, Site.deleted_at.is_(None))
+    q = scope_to_sites(q, Site.id, user)
     if user.role != "super_admin":
         q = q.where(Site.org_id == user.org_id)
 
@@ -89,6 +93,7 @@ async def delete_site(
     require_role(user, "admin")
 
     q = select(Site).where(Site.id == site_id, Site.deleted_at.is_(None))
+    q = scope_to_sites(q, Site.id, user)
     if user.role != "super_admin":
         q = q.where(Site.org_id == user.org_id)
 
@@ -120,6 +125,7 @@ async def restore_site(
     require_role(user, "admin")
 
     q = select(Site).where(Site.id == site_id)
+    q = scope_to_sites(q, Site.id, user)
     if user.role != "super_admin":
         q = q.where(Site.org_id == user.org_id)
 

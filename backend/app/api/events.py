@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import scope_to_sites
 from app.models.camera import Camera
 from app.models.event import Event
 from app.models.user import User
@@ -17,6 +18,7 @@ from app.schemas.event import (
     EventStatsCameraBreakdown,
     EventStatsResponse,
     EventStatsTimeBucket,
+    EventStatusRequest,
     FeedbackRequest,
 )
 from app.services.gcs import fetch_gcs_object, sign_gcs_url
@@ -56,7 +58,7 @@ def _event_query(user: User):
     q = select(Event)
     if user.role != "super_admin":
         q = q.where(Event.org_id == user.org_id)
-    return q
+    return scope_to_sites(q, Event.site_id, user)
 
 
 @router.get("", response_model=dict)
@@ -69,6 +71,7 @@ async def list_events(
     event_type: str | None = Query(None),
     severity: str | None = Query(None),
     feedback: str | None = Query(None),
+    status: str | None = Query(None),
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
     search: str | None = Query(None),
@@ -79,7 +82,11 @@ async def list_events(
     count_q = select(func.count()).select_from(Event)
     if user.role != "super_admin":
         count_q = count_q.where(Event.org_id == user.org_id)
-    elif org_id:
+    # The count is built separately from _event_query, so the site scope has
+    # to be applied here too — filtering only the rows would hide the events
+    # while the pagination total still reported how many exist out of scope.
+    count_q = scope_to_sites(count_q, Event.site_id, user)
+    if user.role == "super_admin" and org_id:
         q = q.where(Event.org_id == org_id)
         count_q = count_q.where(Event.org_id == org_id)
 
@@ -103,6 +110,16 @@ async def list_events(
         else:
             q = q.where(Event.feedback == feedback)
             count_q = count_q.where(Event.feedback == feedback)
+    if status:
+        # "open" is the shift-handover filter: everything still needing
+        # attention, whether or not anyone has picked it up yet.
+        if status == "open":
+            q = q.where(Event.status.notin_(("resolved", "dismissed")))
+            count_q = count_q.where(Event.status.notin_(("resolved", "dismissed")))
+        else:
+            statuses = status.split(",")
+            q = q.where(Event.status.in_(statuses))
+            count_q = count_q.where(Event.status.in_(statuses))
     if start:
         q = q.where(Event.timestamp >= start)
         count_q = count_q.where(Event.timestamp >= start)
@@ -139,6 +156,10 @@ async def event_stats(
         base = base.where(Event.org_id == user.org_id)
     elif org_id:
         base = base.where(Event.org_id == org_id)
+    # Stats build their own base query rather than going through
+    # _event_query, so scoping has to be repeated — an unscoped aggregate
+    # leaks estate-wide activity even when every individual row is hidden.
+    base = scope_to_sites(base, Event.site_id, user)
     if site_id:
         base = base.where(Event.site_id == site_id)
 
@@ -257,3 +278,76 @@ async def submit_feedback(
     event.feedback_at = datetime.now(timezone.utc)
     await db.flush()
     return {"status": "ok", "feedback": body.feedback}
+
+
+# Operational states an event can be moved to. "new" is included so an event
+# acknowledged by mistake can be handed back to the queue rather than being
+# stuck owned by whoever mis-clicked.
+EVENT_STATUSES = {"new", "acknowledged", "resolved", "dismissed"}
+# States that mean "no longer needs attention" — the escalation sweep stops at
+# these, and the handover view excludes them.
+CLOSED_STATUSES = {"resolved", "dismissed"}
+
+
+@router.patch("/{event_id}/status", response_model=EventResponse)
+async def set_event_status(
+    event_id: uuid.UUID,
+    body: EventStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Move an event through the control-room workflow.
+
+    Independent of `/feedback`, which records whether the detection was
+    correct. An operator acknowledges an event because they are dealing with
+    it, not because they agree with the AI.
+
+    Attribution is written onto the event row itself rather than into
+    `audit_log` — that table is HTTP-request-shaped (method/path/status) and
+    populated by middleware, whereas "who acknowledged this and when" is a
+    domain fact the handover view has to query directly.
+    """
+    require_role(user, "operator")
+
+    if body.status not in EVENT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of: {', '.join(sorted(EVENT_STATUSES))}",
+        )
+
+    q = _event_query(user).where(Event.id == event_id)
+    event = (await db.execute(q)).scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    now = datetime.now(timezone.utc)
+    event.status = body.status
+
+    if body.status == "acknowledged":
+        # First acknowledgement wins: it records who actually picked it up.
+        # Re-acknowledging (e.g. a second operator opening the same event)
+        # must not rewrite that to the later person.
+        if event.acknowledged_at is None:
+            event.acknowledged_by = user.id
+            event.acknowledged_at = now
+        event.resolved_by = None
+        event.resolved_at = None
+    elif body.status in CLOSED_STATUSES:
+        # Closing implies it was seen, so backfill acknowledgement rather than
+        # leaving a resolved event that was somehow never acknowledged.
+        if event.acknowledged_at is None:
+            event.acknowledged_by = user.id
+            event.acknowledged_at = now
+        event.resolved_by = user.id
+        event.resolved_at = now
+    else:  # back to "new"
+        event.acknowledged_by = None
+        event.acknowledged_at = None
+        event.resolved_by = None
+        event.resolved_at = None
+
+    if body.note is not None:
+        event.resolution_note = body.note
+
+    await db.flush()
+    return await _to_response(event)
