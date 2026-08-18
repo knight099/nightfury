@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class CreateAlertRuleRequest(BaseModel):
     name: str
+    site_id: uuid.UUID | None = None  # None = all sites
     cameras: list[uuid.UUID] = []
     event_types: list[str] = []
     min_severity: str = "low"
@@ -15,10 +16,14 @@ class CreateAlertRuleRequest(BaseModel):
     notify_contacts: list[dict]  # [{type, value}]
     webhook_url: str | None = None
     cooldown_seconds: int = 60
+    # Ordered rungs: [{after_seconds, channels, contacts}]. Empty = notify
+    # once and never chase, which is the existing behaviour.
+    escalation: list[dict] = []
 
 
 class UpdateAlertRuleRequest(BaseModel):
     name: str | None = None
+    site_id: uuid.UUID | None = None
     cameras: list[uuid.UUID] | None = None
     event_types: list[str] | None = None
     min_severity: str | None = None
@@ -35,6 +40,7 @@ class AlertRuleResponse(BaseModel):
     id: uuid.UUID
     org_id: uuid.UUID
     name: str
+    site_id: uuid.UUID | None = None
     cameras: list[uuid.UUID]
     event_types: list[str]
     min_severity: str
@@ -44,6 +50,7 @@ class AlertRuleResponse(BaseModel):
     notify_contacts: list[dict]
     webhook_url: str | None
     cooldown_seconds: int
+    escalation: list[dict] = []
     enabled: bool
     created_at: datetime
     deleted_at: datetime | None = None

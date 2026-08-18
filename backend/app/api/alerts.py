@@ -54,6 +54,7 @@ async def create_rule(
     rule = AlertRule(
         org_id=user.org_id,
         name=body.name,
+        site_id=body.site_id,
         cameras=body.cameras,
         event_types=body.event_types,
         min_severity=body.min_severity,
@@ -63,6 +64,7 @@ async def create_rule(
         notify_contacts=body.notify_contacts,
         webhook_url=body.webhook_url,
         cooldown_seconds=body.cooldown_seconds,
+        escalation=body.escalation,
     )
     db.add(rule)
     await db.flush()
