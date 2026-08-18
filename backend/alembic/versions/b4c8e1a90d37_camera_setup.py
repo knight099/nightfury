@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("camera_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
-    op.create_index("ix_setup_runs_site", "setup_runs", ["site_id"])
+    op.create_index("ix_setup_runs_site_id", "setup_runs", ["site_id"])
 
     op.create_table(
         "camera_setup_proposals",
@@ -52,5 +52,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("camera_setup_proposals")
-    op.drop_index("ix_setup_runs_site", table_name="setup_runs")
+    op.drop_index("ix_setup_runs_site_id", table_name="setup_runs")
     op.drop_table("setup_runs")
