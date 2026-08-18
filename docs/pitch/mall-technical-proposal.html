@@ -1,0 +1,451 @@
+<title>Mall Deployment Proposal</title>
+<style>
+  :root{
+    --ground:#0B0C0E;
+    --panel:#14161A;
+    --panel-2:#1A1D23;
+    --line:#262A31;
+    --line-2:#333944;
+    --ink:#E8EAED;
+    --ink-2:#9AA2AE;
+    --ink-3:#6B7280;
+    --accent:#1E90FF;
+    --accent-dim:#12324F;
+    --crit:#FF4D4D;
+    --warn:#FFB020;
+    --ok:#31C48D;
+    --sans:"Helvetica Neue",Helvetica,Arial,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.55;
+  }
+  .page{
+    max-width:920px;margin:0 auto;
+    padding:clamp(28px,4vw,56px) clamp(20px,4vw,48px) clamp(56px,7vw,88px);
+    display:flex;flex-direction:column;gap:clamp(30px,3.4vw,44px);
+  }
+
+  /* masthead */
+  .masthead{
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding-bottom:14px;border-bottom:1px solid var(--line);
+  }
+  .wordmark{font-family:var(--mono);font-size:13px;letter-spacing:.22em;text-transform:uppercase;font-weight:600;}
+  .masthead .sep{color:var(--ink-3);}
+  .masthead .sub{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+
+  h1{
+    font-size:clamp(28px,3.8vw,42px);line-height:1.05;letter-spacing:-.03em;
+    font-weight:700;margin:0;text-wrap:balance;max-width:22ch;
+  }
+  h2{
+    font-size:clamp(19px,2.1vw,25px);line-height:1.2;letter-spacing:-.018em;
+    font-weight:700;margin:0;text-wrap:balance;
+  }
+  h3{font-size:15.5px;line-height:1.35;font-weight:600;margin:0;letter-spacing:-.005em;}
+  p{margin:0;color:var(--ink-2);max-width:70ch;font-size:15px;}
+  p.lead{color:var(--ink);font-size:17px;max-width:60ch;}
+  strong{color:var(--ink);font-weight:600;}
+  code{
+    font-family:var(--mono);font-size:.88em;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--ink);
+  }
+
+  /* numbered sections — the document IS a sequence of review gates, so numbering carries meaning */
+  section{display:flex;flex-direction:column;gap:16px;scroll-margin-top:20px;}
+  .sechead{display:flex;gap:14px;align-items:baseline;border-top:1px solid var(--line);padding-top:18px;}
+  .sechead .num{
+    font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--accent);
+    flex:none;padding-top:4px;font-variant-numeric:tabular-nums;
+  }
+
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;}
+  ul li{display:flex;gap:10px;align-items:flex-start;color:var(--ink-2);font-size:15px;}
+  ul li::before{content:"";flex:none;width:5px;height:5px;margin-top:9px;background:var(--line-2);border-radius:1px;}
+  ul.acc li::before{background:var(--accent);}
+  ul.ok li::before{background:var(--ok);}
+  ul.warn li::before{background:var(--warn);}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;}
+  table{border-collapse:collapse;width:100%;min-width:560px;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top;}
+  tr:last-child td{border-bottom:0;}
+  th{
+    font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:400;background:var(--panel-2);
+  }
+  td{color:var(--ink-2);}
+  td:first-child{color:var(--ink);font-weight:500;}
+  td.mono,th.mono{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;}
+
+  .status{
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+    padding:3px 8px;border-radius:3px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--ink-2);
+  }
+  .status::before{content:"";width:6px;height:6px;border-radius:1px;background:var(--ink-3);}
+  .status.live::before{background:var(--ok);}
+  .status.pilot::before{background:var(--accent);}
+  .status.road::before{background:var(--warn);}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:16px 18px;display:flex;flex-direction:column;gap:9px;
+  }
+  .card p{font-size:14px;}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);}
+
+  .cols{display:grid;gap:14px;}
+  .c2{grid-template-columns:repeat(2,1fr);}
+  .c3{grid-template-columns:repeat(3,1fr);}
+  @media(max-width:800px){.c2,.c3{grid-template-columns:1fr;}}
+
+  .note{
+    border-left:2px solid var(--accent);background:var(--panel);
+    padding:14px 18px;border-radius:0 6px 6px 0;display:flex;flex-direction:column;gap:7px;
+  }
+  .note .tag{color:var(--accent);}
+  .note.caution{border-left-color:var(--warn);}
+  .note.caution .tag{color:var(--warn);}
+
+  .toc{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:18px 20px;display:flex;flex-direction:column;gap:11px;
+  }
+  .toc ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 24px;counter-reset:t;}
+  @media(max-width:700px){.toc ol{grid-template-columns:1fr;}}
+  .toc li{counter-increment:t;font-size:14px;}
+  .toc a{color:var(--ink-2);text-decoration:none;display:flex;gap:10px;}
+  .toc a:hover,.toc a:focus-visible{color:var(--accent);}
+  .toc a::before{
+    content:counter(t,decimal-leading-zero);
+    font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none;padding-top:2px;
+  }
+  a{color:var(--accent);}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px;}
+
+  footer{
+    border-top:1px solid var(--line);padding-top:16px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  }
+</style>
+
+<div class="page">
+
+<header style="display:flex;flex-direction:column;gap:16px;">
+  <div class="masthead">
+    <span class="wordmark">Nightwatch</span>
+    <span class="sep">/</span>
+    <span class="sub">Technical proposal &amp; pilot scope of work</span>
+  </div>
+  <h1>Deploying Nightwatch on an existing mall CCTV estate</h1>
+  <p class="lead">Written for the mall's IT and security leads. It states what is installed, what crosses the network boundary, what the platform can and cannot do today, and what the thirty-day pilot commits both sides to.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <span class="status live">Available today</span>
+    <span class="status pilot">In pilot scope</span>
+    <span class="status road">Roadmap — not committed</span>
+  </div>
+</header>
+
+<div class="toc">
+  <span class="tag">Contents</span>
+  <ol>
+    <li><a href="#s1">Scope and assumptions</a></li>
+    <li><a href="#s2">What gets installed</a></li>
+    <li><a href="#s3">Network requirements</a></li>
+    <li><a href="#s4">Data crossing the boundary</a></li>
+    <li><a href="#s5">Security posture</a></li>
+    <li><a href="#s6">Privacy and DPDP posture</a></li>
+    <li><a href="#s7">Capability matrix</a></li>
+    <li><a href="#s8">NVR and camera compatibility</a></li>
+    <li><a href="#s9">Failure modes</a></li>
+    <li><a href="#s10">Pilot plan and responsibilities</a></li>
+    <li><a href="#s11">Success criteria</a></li>
+    <li><a href="#s12">Commercials and out of scope</a></li>
+  </ol>
+</div>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="sechead"><span class="num">01</span><h2>Scope and assumptions</h2></div>
+  <p>This proposal covers a <strong>thirty-day pilot on twelve cameras in one contiguous zone</strong> of the mall, with a defined path to estate-wide rollout after review. It deliberately does not price or commit to the full estate before the pilot has produced measured numbers.</p>
+  <ul class="acc">
+    <li>The mall operates an existing NVR or DVR recording the cameras in scope, reachable over a wired LAN.</li>
+    <li>Cameras expose RTSP, either via ONVIF discovery or a per-brand URL we configure manually.</li>
+    <li>Existing recording, retention and camera hardware are <strong>not modified</strong>. Nightwatch is an additional read-only consumer of the streams.</li>
+    <li>The control room has an available wired network port and mains power for one 1U or small-form-factor appliance.</li>
+    <li>A general-purpose internet connection is available. A dedicated line is not required.</li>
+  </ul>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="sechead"><span class="num">02</span><h2>What gets installed</h2></div>
+  <p>A single appliance — the "edge box" — placed in the control room or server room. It runs the full detection pipeline locally. There is no software to install on any of the mall's existing machines and no agent on operator workstations.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Item</th><th>Pilot specification</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Appliance</td><td>x86-64, 8-core, 16 GB RAM, 256 GB SSD</td><td>Supplied by Nightwatch on loan for the pilot period</td></tr>
+        <tr><td>Cameras per appliance</td><td class="mono">12</td><td>Current per-instance limit. Rollout density is set by measurement during the pilot, not assumed — see §12</td></tr>
+        <tr><td>Inference</td><td>CPU only, no GPU required</td><td>Local object detection runs as an optimised CPU model; richer scene analysis is escalated selectively</td></tr>
+        <tr><td>Local storage use</td><td>Rolling buffer + offline event queue</td><td>Continuous footage is <strong>not</strong> archived on the appliance; your NVR remains the system of record</td></tr>
+        <tr><td>Power</td><td>Standard mains, ~65 W typical</td><td>UPS-backed circuit recommended, same as your NVR</td></tr>
+        <tr><td>Physical access</td><td>None required after install</td><td>Managed and updated remotely over its outbound connection</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note caution">
+    <span class="tag">Sizing, stated honestly</span>
+    <p>One appliance covers twelve cameras today. An estate of 300 cameras is therefore not one box — it is a fleet, and the per-box density is the single most important number the pilot needs to establish. We would rather measure it on your cameras than quote you a number from a datasheet.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="sechead"><span class="num">03</span><h2>Network requirements</h2></div>
+  <div class="cols c2">
+    <div class="card">
+      <span class="tag">Inbound to your network</span>
+      <h3>None</h3>
+      <p>No port forwarding. No static public IP. No inbound firewall rule. No VPN terminating inside your LAN. The appliance initiates every connection it makes.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Outbound from the appliance</span>
+      <h3>HTTPS on 443, plus one persistent connection</h3>
+      <p>A single long-lived encrypted connection to the Nightwatch backend carries health status and live-view setup messages. Event data and media are ordinary HTTPS uploads.</p>
+    </div>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Direction</th><th class="mono">Port</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Appliance → NVR/cameras (LAN)</td><td class="mono">554</td><td>RTSP stream read. Internal only, never leaves the LAN.</td></tr>
+        <tr><td>Appliance → NVR/cameras (LAN)</td><td class="mono">80 / 3702</td><td>ONVIF discovery and device query during setup.</td></tr>
+        <tr><td>Appliance → internet</td><td class="mono">443</td><td>Control connection, event upload, media upload, credential issuance.</td></tr>
+        <tr><td>Appliance → internet</td><td class="mono">3478 / 5349</td><td>Only when a person opens live view, for the direct browser connection. Idle otherwise.</td></tr>
+        <tr><td>Internet → your network</td><td class="mono">—</td><td>Nothing. No listening service is exposed.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Bandwidth</h3>
+  <p>Nightwatch does <strong>not</strong> maintain a video uplink. Outbound traffic is proportional to the number of events, not the number of cameras. A typical event is a snapshot plus a ten-second clip — on the order of one to two megabytes. Two hundred events in a day is a few hundred megabytes. Live view consumes real bandwidth only for as long as a person has a camera open.</p>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="sechead"><span class="num">04</span><h2>Data crossing the boundary</h2></div>
+  <p>This is the table your security team will care about most. It is exhaustive for the pilot configuration.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Data</th><th>Leaves premises?</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr><td>Continuous video</td><td><span class="status">Never</span></td><td>Analysed frame by frame on the appliance and discarded there.</td></tr>
+        <tr><td>Camera credentials</td><td><span class="status">Never</span></td><td>Held in the appliance's local configuration. Not stored in our database.</td></tr>
+        <tr><td>Event snapshot</td><td><span class="status live">Yes</span></td><td>One still image of the moment detected, uploaded to object storage under your organisation.</td></tr>
+        <tr><td>Event clip</td><td><span class="status live">Yes</span></td><td>Approximately ten seconds around the event.</td></tr>
+        <tr><td>Event metadata</td><td><span class="status live">Yes</span></td><td>Timestamp, camera, zone, event type, severity, confidence, and a text description of what was seen.</td></tr>
+        <tr><td>Frames sent for scene analysis</td><td><span class="status live">Yes</span></td><td>Only frames that have already passed local motion and object filtering. Sent directly from the appliance to the AI provider — they do not pass through Nightwatch servers.</td></tr>
+        <tr><td>Health telemetry</td><td><span class="status live">Yes</span></td><td>Camera up/down status, frame rates, process health. No image content.</td></tr>
+        <tr><td>Live view stream</td><td><span class="status pilot">On demand only</span></td><td>Negotiated directly between the appliance and the viewer's browser. Not recorded, and not routed through Nightwatch servers.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="sechead"><span class="num">05</span><h2>Security posture</h2></div>
+  <div class="cols c2">
+    <div class="card">
+      <span class="tag">Appliance identity</span>
+      <h3>Pairing, then a bound device token</h3>
+      <p>The appliance is paired once using a short-lived single-use code entered in your dashboard. It then holds a long-lived token bound to its own keypair and scoped to your organisation alone.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Standing secrets on the box</span>
+      <h3>None</h3>
+      <p>The appliance carries no permanent cloud service-account key and no permanent AI provider key. It exchanges its device token for short-lived credentials, each valid for at most thirty minutes, and for individually signed one-time upload URLs.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Revocation</span>
+      <h3>Immediate and total</h3>
+      <p>Revoking the device token from your dashboard stops event ingestion at once and stops the appliance's access to any AI or storage credential within one short expiry window. No physical access is needed.</p>
+    </div>
+    <div class="card">
+      <span class="tag">User sessions</span>
+      <h3>Server-side, bound to device</h3>
+      <p>Dashboard sessions are opaque server-side tokens, encrypted at rest, bound to the originating address and browser, with idle and absolute expiry and brute-force lockout. A copied token does not work elsewhere.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Tenant isolation</span>
+      <h3>Enforced per query</h3>
+      <p>Every record carries your organisation identifier and every read is filtered by it in the data layer — not hidden by the user interface.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Audit</span>
+      <h3>Recorded and exportable</h3>
+      <p>Logins, camera views, configuration changes and administrative actions are written to an audit log available to your security head.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="sechead"><span class="num">06</span><h2>Privacy and DPDP posture</h2></div>
+  <ul class="acc">
+    <li><strong>No facial recognition and no biometric identification.</strong> The system detects that a person is present and describes behaviour within a zone. It does not build a face database, does not match individuals against any watchlist, and cannot tell you who someone is. This is a product decision, not a configuration.</li>
+    <li><strong>No cross-camera identity matching in pilot scope.</strong> Correlating a person's path between cameras is a separate and more privacy-sensitive capability that is not part of this deployment.</li>
+    <li><strong>Minimisation by design.</strong> The overwhelming majority of recorded footage never leaves the premises and is never stored by us, because uneventful frames are discarded at the edge.</li>
+    <li><strong>Your existing obligations are unchanged.</strong> Signage, notice, and the lawful basis for CCTV operation remain the mall's responsibility as they are today. Nightwatch adds analysis over footage you are already lawfully recording.</li>
+  </ul>
+  <div class="note caution">
+    <span class="tag">Open item for the pilot</span>
+    <p>A configurable retention period for events and clips is not yet a self-service setting. For the pilot we will agree a fixed retention window in writing and apply it operationally. Self-service retention configuration is on the roadmap and is called out as such rather than implied.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="sechead"><span class="num">07</span><h2>Capability matrix</h2></div>
+  <p>Stated so that nothing in the pitch is mistaken for something that exists. Anything marked roadmap is not committed and should not be priced or planned around.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Capability</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Person, vehicle and intrusion detection per zone</td><td><span class="status live">Available</span></td><td>Polygon zones drawn on the camera image; per-camera sensitivity.</td></tr>
+        <tr><td>Scene description in plain language</td><td><span class="status live">Available</span></td><td>Each event carries a written description of what was seen.</td></tr>
+        <tr><td>Loitering and dwell-time rules</td><td><span class="status live">Available</span></td><td>Configured per zone as a timed condition.</td></tr>
+        <tr><td>Procedure and step-sequence monitoring</td><td><span class="status live">Available</span></td><td>Ordered steps across zones with timeouts — e.g. approach, dwell, exit without a second person present.</td></tr>
+        <tr><td>Rule authoring in plain English</td><td><span class="status live">Available</span></td><td>Conversational drafting; a person always reviews and saves before it takes effect.</td></tr>
+        <tr><td>WhatsApp, email and webhook alerting</td><td><span class="status live">Available</span></td><td>Per-rule severity thresholds, time windows and cooldowns.</td></tr>
+        <tr><td>Morning and evening written digests</td><td><span class="status live">Available</span></td><td>On the mall's own timezone and schedule.</td></tr>
+        <tr><td>Ask-the-footage question answering</td><td><span class="status live">Available</span></td><td>Answers from the event record, per camera.</td></tr>
+        <tr><td>Live view of a single camera</td><td><span class="status live">Available</span></td><td>Direct browser-to-appliance connection, opened on demand.</td></tr>
+        <tr><td>Roles, multi-site structure and audit log</td><td><span class="status live">Available</span></td><td>Owner, admin, operator and viewer roles.</td></tr>
+        <tr><td>Per-zone access restriction for staff accounts</td><td><span class="status road">Roadmap</span></td><td>Accounts are currently scoped to the organisation. Restricting an operator to one floor is designed but not yet enforced.</td></tr>
+        <tr><td>Incident acknowledgement and shift handover</td><td><span class="status road">Roadmap</span></td><td>Events can be marked correct or incorrect, but there is no assignment, acknowledgement or handover workflow yet.</td></tr>
+        <tr><td>Multi-camera video wall in the dashboard</td><td><span class="status road">Roadmap</span></td><td>Live view is one camera at a time today.</td></tr>
+        <tr><td>Cross-camera journey correlation</td><td><span class="status road">Roadmap</span></td><td>Designed; not built. Would be adjacency-and-timing based, never biometric.</td></tr>
+        <tr><td>Footfall counting and crowd density analytics</td><td><span class="status road">Roadmap</span></td><td>Not built. Should not form part of a pilot's success criteria.</td></tr>
+        <tr><td>Fall and person-down detection</td><td><span class="status road">Roadmap</span></td><td>Posture analysis exists but is not tuned or validated for reliable fall detection. Do not rely on it.</td></tr>
+        <tr><td>Fleet management across many appliances</td><td><span class="status road">Roadmap</span></td><td>Required before estate-wide rollout. See §12.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="sechead"><span class="num">08</span><h2>NVR and camera compatibility</h2></div>
+  <p>Integration is at the stream level, so brand support is a question of RTSP reachability rather than vendor partnership.</p>
+  <ul class="acc">
+    <li><strong>Automatic discovery</strong> via ONVIF where the NVR or cameras support it — the common case for CP Plus, Hikvision, Dahua and their OEM rebrands.</li>
+    <li><strong>Manual configuration</strong> per camera where discovery is unavailable or disabled, using the brand's documented RTSP URL pattern and a read-only account.</li>
+    <li><strong>Sub-stream preferred.</strong> Where cameras expose a secondary lower-resolution stream, we consume that. It reduces load on the NVR and is sufficient for detection.</li>
+    <li><strong>Read-only account requested.</strong> Nightwatch needs stream read access only. It does not need, and should not be given, camera administration rights.</li>
+  </ul>
+  <div class="note">
+    <span class="tag">Pre-install check</span>
+    <p>Before the install day we ask for the NVR make and model, the number of concurrent stream sessions it supports, and confirmation that a read-only account can be created. Concurrent session limits on older NVRs are the most common cause of a surprise on install day.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="sechead"><span class="num">09</span><h2>Failure modes</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>If this happens</th><th>Then</th></tr></thead>
+      <tbody>
+        <tr><td>Internet link drops</td><td>Detection continues uninterrupted on the appliance. Events queue locally and are delivered when the link returns. Alerts are delayed, not lost.</td></tr>
+        <tr><td>A camera goes offline</td><td>The camera is marked offline in the dashboard and reported in health telemetry. Other cameras are unaffected.</td></tr>
+        <tr><td>The detection process crashes</td><td>It is supervised and restarted automatically. The gap is visible in health telemetry rather than silent.</td></tr>
+        <tr><td>The appliance loses power</td><td>The twelve cameras on it are not analysed until it returns. <strong>Your NVR keeps recording throughout</strong> — nothing is lost from the record, only from live analysis. Appliance redundancy is not part of pilot scope.</td></tr>
+        <tr><td>Scene analysis is unavailable upstream</td><td>Local detection continues and events still fire, with reduced descriptive detail. Digests fall back to a summary assembled from event metadata.</td></tr>
+        <tr><td>Daily AI spend cap is reached</td><td>A per-organisation cap is enforced. On reaching it, analysis degrades to local detection only for the remainder of the day and the dashboard says so plainly.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="sechead"><span class="num">10</span><h2>Pilot plan and responsibilities</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Stage</th><th class="mono">When</th><th>Nightwatch</th><th>Mall</th></tr></thead>
+      <tbody>
+        <tr><td>Pre-install check</td><td class="mono">Day −5</td><td>Send the information request; review the answers</td><td>NVR model, stream limits, read-only account, zone selection</td></tr>
+        <tr><td>Install</td><td class="mono">Day 0, ~4 hrs</td><td>Rack the appliance, discover cameras, verify all twelve streams</td><td>Network port, power, control-room access, escort</td></tr>
+        <tr><td>Zone configuration</td><td class="mono">Day 0, ~2 hrs</td><td>Draw zones and set rules alongside your team</td><td>Nominated security person to say what matters where</td></tr>
+        <tr><td>Training</td><td class="mono">Day 1, 1 hr</td><td>Walk the control room and managers through the dashboard and alerts</td><td>Attendance from each shift</td></tr>
+        <tr><td>Tuning window</td><td class="mono">Days 1–7</td><td>Daily review of false alarms; adjust sensitivity and zones</td><td>Tell us which alerts were not useful — this is the whole job</td></tr>
+        <tr><td>Steady state</td><td class="mono">Days 8–30</td><td>Weekly check-in; named contact on call</td><td>Normal operation, flagging anything that misses</td></tr>
+        <tr><td>Review</td><td class="mono">Day 30, 1 hr</td><td>Present measured results against the agreed criteria</td><td>Decision to proceed, extend, or return the appliance</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="sechead"><span class="num">11</span><h2>Success criteria</h2></div>
+  <p>These are set jointly and written down <strong>before</strong> install day, with target numbers filled in by the mall. A pilot without a pass mark agreed in advance is not a pilot.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Measure</th><th>How it is measured</th><th class="mono">Target</th></tr></thead>
+      <tbody>
+        <tr><td>Genuine events surfaced</td><td>Events your team confirms as real and would not otherwise have seen</td><td class="mono">to agree</td></tr>
+        <tr><td>Time to notification</td><td>Timestamp on the camera to timestamp on the duty manager's phone</td><td class="mono">to agree</td></tr>
+        <tr><td>False alarms</td><td>Per camera per day, measured in week one and again in week four</td><td class="mono">to agree</td></tr>
+        <tr><td>Camera uptime</td><td>Proportion of the pilot each camera was under analysis</td><td class="mono">to agree</td></tr>
+        <tr><td>Operator judgement</td><td>Written verdict from the nominated security person at review</td><td class="mono">qualitative</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <span class="tag">On false alarms</span>
+    <p>Expect week one to be noisy. The honest measure is not the day-one rate but whether tuning brings it down and holds it down — that is exactly what weeks one to four are for, and it is the number we would want you to judge us on.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="sechead"><span class="num">12</span><h2>Commercials and out of scope</h2></div>
+  <h3>Pilot</h3>
+  <ul class="ok">
+    <li>Appliance supplied on loan, returned if the pilot does not proceed.</li>
+    <li>Installation, configuration and training included.</li>
+    <li>Commercial terms for the pilot itself to be confirmed by Nightwatch before signature.</li>
+  </ul>
+  <h3>Rollout — structure, not a number</h3>
+  <p>Estate pricing is deliberately not quoted here. It has two components, and one of them cannot be honestly estimated before the pilot:</p>
+  <ul class="acc">
+    <li><strong>Appliances</strong> — a function of cameras per appliance, which the pilot measures on your actual cameras and stream profiles.</li>
+    <li><strong>Per-camera monthly subscription</strong> — covering analysis, alerting, dashboard access, event storage and support.</li>
+  </ul>
+  <h3>Explicitly out of scope</h3>
+  <ul class="warn">
+    <li>Replacing, repairing or reconfiguring existing cameras, cabling or NVR equipment.</li>
+    <li>Acting as a recording or archival system. Your NVR remains the system of record and the source for evidentiary footage.</li>
+    <li>Guarding, monitoring or response services. Nightwatch surfaces events; your team decides and acts.</li>
+    <li>Any capability marked roadmap in §07.</li>
+  </ul>
+  <div class="note caution">
+    <span class="tag">Before estate-wide rollout</span>
+    <p>Three items in §07 — per-zone account restriction, incident acknowledgement workflow, and fleet management across appliances — are genuine prerequisites for running this across a full mall estate with a shift-based control room. They are on the roadmap with the rollout in mind, and we would rather name them here than have them discovered during deployment.</p>
+  </div>
+</section>
+
+<footer>
+  <span>Nightwatch — technical proposal</span>
+  <span>Prepared for mall security operations</span>
+</footer>
+
+</div>

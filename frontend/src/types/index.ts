@@ -78,6 +78,13 @@ export interface Event {
   feedback_label: string | null;
   feedback_at: string | null;
   created_at: string;
+  /** Operational state — "did somebody deal with it?". Independent of `feedback`. */
+  status: "new" | "acknowledged" | "resolved" | "dismissed";
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
 }
 
 export interface BoundingBox {
@@ -270,4 +277,80 @@ export interface DiscoverResponse {
 export interface PairCodeResponse {
   code: string;
   expires_at: string;
+}
+
+// ─── Fleet (appliance capacity & camera coverage per site) ──────────────────
+
+export interface FleetCamera {
+  id: string;
+  name: string;
+  status: string;
+  agent_id: string | null;
+  pinned_agent_id: string | null;
+  last_frame_at: string | null;
+}
+
+export interface FleetAgent {
+  id: string;
+  machine_id: string;
+  status: string;
+  version: string | null;
+  last_seen_at: string | null;
+  capacity_cameras: number | null;
+  /** "declared" = estimated from CPU/RAM; "measured" = revised from observed load. */
+  capacity_source: string;
+  assigned_count: number;
+  assignment_version: number;
+  /** "ok" | "degraded" | "over_capacity" */
+  load_state: string;
+  load_reason: string | null;
+  /** Heartbeat too old — its capacity does not count toward coverage. */
+  is_stale: boolean;
+  spare_capacity: number;
+  cameras: FleetCamera[];
+}
+
+export interface FleetResponse {
+  site_id: string;
+  site_name: string;
+  agents: FleetAgent[];
+  /** Cameras nobody is analysing. The number that matters most on this page. */
+  unassigned_cameras: FleetCamera[];
+  cameras_total: number;
+  cameras_covered: number;
+  capacity_total: number;
+  capacity_spare: number;
+}
+
+// ─── Camera adjacency & journeys ────────────────────────────────────────────
+// Adjacency is drawn by an operator, never inferred. A journey correlates
+// events across those edges by timing — a plausibility signal, NOT an
+// identity claim. No biometrics or appearance matching is involved.
+
+export interface CameraConnection {
+  id: string;
+  site_id: string;
+  camera_a_id: string;
+  camera_b_id: string;
+  label: string | null;
+  created_at: string;
+}
+
+export interface JourneyStep {
+  camera_id: string;
+  camera_name: string;
+  event_id: string;
+  timestamp: string;
+  event_type: string;
+  severity: string;
+  /** Operator's label for the connection walked to reach this step. */
+  via: string | null;
+}
+
+export interface Journey {
+  seed_event_id: string;
+  /** False for most events — nothing happened on a connected camera. Normal. */
+  has_journey: boolean;
+  summary: string;
+  steps: JourneyStep[];
 }

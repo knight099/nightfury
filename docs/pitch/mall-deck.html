@@ -1,0 +1,618 @@
+<title>Nightwatch for Malls</title>
+<style>
+  :root{
+    --ground:#0B0C0E;
+    --panel:#14161A;
+    --panel-2:#1A1D23;
+    --line:#262A31;
+    --ink:#E8EAED;
+    --ink-2:#9AA2AE;
+    --ink-3:#6B7280;
+    --accent:#1E90FF;
+    --accent-dim:#12324F;
+    --crit:#FF4D4D;
+    --warn:#FFB020;
+    --ok:#31C48D;
+    --sans:"Helvetica Neue",Helvetica,Arial,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+  }
+
+  *{box-sizing:border-box;}
+
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- deck shell ---------- */
+  .deck{
+    scroll-snap-type:y mandatory;
+    overflow-y:auto;
+    height:100vh;
+  }
+  .slide{
+    scroll-snap-align:start;
+    min-height:100vh;
+    padding:clamp(28px,5vh,64px) clamp(20px,6vw,96px) clamp(64px,9vh,96px);
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:clamp(20px,3.2vh,40px);
+    position:relative;
+    border-bottom:1px solid var(--line);
+  }
+
+  /* on-screen-display rail, bottom of every slide */
+  .osd{
+    position:absolute;
+    left:clamp(20px,6vw,96px);
+    right:clamp(20px,6vw,96px);
+    bottom:clamp(20px,3.4vh,36px);
+    display:flex;
+    align-items:center;
+    gap:14px;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.09em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+    border-top:1px solid var(--line);
+    padding-top:12px;
+  }
+  .osd .rec{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--crit);
+    flex:none;
+  }
+  .osd .grow{flex:1;}
+  .osd b{color:var(--ink-2);font-weight:500;}
+
+  /* ---------- type ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--accent);
+  }
+  h1{
+    font-size:clamp(38px,6.4vw,88px);
+    line-height:.98;
+    letter-spacing:-.035em;
+    font-weight:700;
+    margin:0;
+    text-wrap:balance;
+  }
+  h2{
+    font-size:clamp(28px,4.1vw,54px);
+    line-height:1.04;
+    letter-spacing:-.028em;
+    font-weight:700;
+    margin:0;
+    max-width:20ch;
+    text-wrap:balance;
+  }
+  h3{
+    font-size:clamp(16px,1.5vw,19px);
+    line-height:1.25;
+    letter-spacing:-.01em;
+    font-weight:600;
+    margin:0;
+  }
+  p{margin:0;line-height:1.55;color:var(--ink-2);max-width:62ch;font-size:clamp(15px,1.35vw,18px);}
+  p.lead{color:var(--ink);font-size:clamp(17px,1.7vw,22px);max-width:52ch;}
+  strong{color:var(--ink);font-weight:600;}
+  .mono{font-family:var(--mono);}
+
+  /* ---------- primitives ---------- */
+  .cols{display:grid;gap:clamp(14px,1.6vw,22px);}
+  .c2{grid-template-columns:repeat(2,1fr);}
+  .c3{grid-template-columns:repeat(3,1fr);}
+  .c4{grid-template-columns:repeat(4,1fr);}
+  @media(max-width:860px){
+    .c2,.c3,.c4{grid-template-columns:1fr;}
+  }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:clamp(16px,1.7vw,22px);
+    display:flex;
+    flex-direction:column;
+    gap:9px;
+  }
+  .card p{font-size:14.5px;line-height:1.5;}
+  .card .tag{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+
+  .stat{display:flex;flex-direction:column;gap:4px;}
+  .stat .n{
+    font-family:var(--mono);
+    font-size:clamp(34px,4.4vw,60px);
+    line-height:1;
+    letter-spacing:-.04em;
+    font-variant-numeric:tabular-nums;
+    color:var(--ink);
+  }
+  .stat .n.hot{color:var(--warn);}
+  .stat .n.acc{color:var(--accent);}
+  .stat .k{
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+
+  .rule{height:1px;background:var(--line);border:0;margin:0;}
+
+  /* severity chips */
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;
+    padding:4px 9px;border-radius:3px;
+    border:1px solid var(--line);color:var(--ink-2);
+    background:var(--panel-2);
+  }
+  .chip::before{content:"";width:6px;height:6px;border-radius:1px;background:var(--ink-3);}
+  .chip.crit::before{background:var(--crit);}
+  .chip.warn::before{background:var(--warn);}
+  .chip.ok::before{background:var(--ok);}
+  .chip.acc::before{background:var(--accent);}
+
+  /* ---------- slide 2: the video wall ---------- */
+  .wall{
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    gap:5px;
+    max-width:760px;
+  }
+  @media(max-width:860px){.wall{grid-template-columns:repeat(6,1fr);}}
+  .tile{
+    aspect-ratio:4/3;
+    background:
+      repeating-linear-gradient(180deg,rgba(255,255,255,.022) 0 1px,transparent 1px 3px),
+      var(--panel);
+    border:1px solid var(--line);
+    border-radius:2px;
+  }
+  .tile.hit{
+    border-color:var(--warn);
+    background:
+      repeating-linear-gradient(180deg,rgba(255,176,32,.10) 0 1px,transparent 1px 3px),
+      #2A2113;
+    box-shadow:0 0 0 1px rgba(255,176,32,.35),0 0 18px rgba(255,176,32,.22);
+  }
+  @media(prefers-reduced-motion:no-preference){
+    .tile.hit{animation:blip 2.4s ease-in-out infinite;}
+    @keyframes blip{0%,100%{opacity:1}50%{opacity:.62}}
+  }
+
+  /* ---------- flow diagram ---------- */
+  .flow{
+    display:grid;
+    grid-template-columns:1fr auto 1fr auto 1fr;
+    align-items:stretch;
+    gap:clamp(8px,1vw,16px);
+  }
+  @media(max-width:860px){
+    .flow{grid-template-columns:1fr;}
+    .flow .arrow{transform:rotate(90deg);justify-self:start;padding-left:18px;}
+  }
+  .node{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:clamp(14px,1.5vw,20px);
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .node.here{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-dim),var(--panel) 62%);}
+  .node .where{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+  .node.here .where{color:var(--accent);}
+  .node p{font-size:13.5px;line-height:1.45;}
+  .arrow{
+    align-self:center;
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    color:var(--ink-3);white-space:nowrap;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+  }
+  .arrow em{font-style:normal;color:var(--ink-3);font-size:10px;letter-spacing:.1em;text-transform:uppercase;}
+
+  .boundary{
+    border:1px dashed var(--line);
+    border-radius:8px;
+    padding:clamp(14px,1.8vw,22px);
+    position:relative;
+  }
+  .boundary::before{
+    content:attr(data-label);
+    position:absolute;top:-9px;left:16px;
+    background:var(--ground);
+    padding:0 8px;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+
+  /* ---------- chat / terminal blocks ---------- */
+  .term{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-family:var(--mono);
+    font-size:13.5px;
+    line-height:1.6;
+    overflow:hidden;
+  }
+  .term .bar{
+    padding:8px 14px;
+    border-bottom:1px solid var(--line);
+    color:var(--ink-3);
+    font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    background:var(--panel-2);
+  }
+  .term .body{padding:14px;display:flex;flex-direction:column;gap:11px;}
+  .msg{display:flex;gap:10px;align-items:flex-start;}
+  .msg .who{color:var(--ink-3);flex:none;width:52px;}
+  .msg.you .txt{color:var(--ink);}
+  .msg.nw .txt{color:var(--accent);}
+  .msg .txt{color:var(--ink-2);}
+
+  /* ---------- lists ---------- */
+  ul.ticks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+  ul.ticks li{
+    display:flex;gap:11px;align-items:flex-start;
+    color:var(--ink-2);line-height:1.5;font-size:clamp(14px,1.3vw,16px);
+  }
+  ul.ticks li::before{
+    content:"";flex:none;width:6px;height:6px;margin-top:8px;
+    background:var(--accent);border-radius:1px;
+  }
+  ul.ticks.warnmark li::before{background:var(--warn);}
+
+  /* ---------- table ---------- */
+  .tablewrap{overflow-x:auto;}
+  table{border-collapse:collapse;width:100%;min-width:520px;}
+  th,td{
+    text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);
+    font-size:14.5px;vertical-align:top;
+  }
+  th{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:400;
+  }
+  td{color:var(--ink-2);}
+  td:first-child{color:var(--ink);font-weight:500;white-space:nowrap;}
+
+  .kicker{
+    font-family:var(--mono);font-size:clamp(12px,1.15vw,14px);
+    letter-spacing:.06em;color:var(--ink-3);
+  }
+
+  .ask{
+    border:1px solid var(--accent);
+    background:linear-gradient(180deg,var(--accent-dim),var(--panel) 70%);
+    border-radius:8px;
+    padding:clamp(20px,2.4vw,32px);
+    display:flex;flex-direction:column;gap:14px;
+  }
+</style>
+
+<div class="deck">
+
+<!-- 01 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">Nightwatch · CCTV Event Intelligence</div>
+  <h1>Your cameras<br>already saw it.<br>Nobody was<br>watching.</h1>
+  <p class="lead">One box on your network turns every camera you already own into something that reports to you — instead of something you search after the fact.</p>
+  <div class="osd">
+    <span class="rec"></span><b>Nightwatch</b><span class="grow"></span><span>Proposal for mall security operations</span><span>01 / 12</span>
+  </div>
+</section>
+
+<!-- 02 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">The problem, stated plainly</div>
+  <h2>A control room is a coverage problem disguised as a staffing problem.</h2>
+  <div class="cols c4">
+    <div class="stat"><span class="n">300+</span><span class="k">Cameras installed</span></div>
+    <div class="stat"><span class="n">2–3</span><span class="k">Operators per shift</span></div>
+    <div class="stat"><span class="n hot">~20</span><span class="k">Minutes before attention drops</span></div>
+    <div class="stat"><span class="n hot">1</span><span class="k">Feed watched at a time</span></div>
+  </div>
+  <hr class="rule">
+  <div class="cols c2" style="align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <p>Every feed below is live right now. One of them has something on it. Your operator is looking at a different one — not through negligence, but because sustained attention across a wall of static feeds is a task humans are measurably bad at.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span class="chip warn">Unreviewed motion</span>
+        <span class="chip">Nominal</span>
+      </div>
+    </div>
+    <div class="wall">
+      <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+      <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+      <div class="tile"></div><div class="tile"></div><div class="tile hit"></div><div class="tile"></div>
+      <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+      <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+      <div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div>
+    </div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Problem</b><span class="grow"></span><span>Coverage</span><span>02 / 12</span>
+  </div>
+</section>
+
+<!-- 03 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">What the day actually looks like</div>
+  <h2>Your CCTV is forensic. You need it to be operational.</h2>
+  <div class="cols c2">
+    <div class="card">
+      <span class="tag">Today</span>
+      <h3>Incident → complaint → search</h3>
+      <p>A tenant reports a theft at 4:00 PM. Someone goes to the control room, picks the likely camera, and scrubs back through hours of recording. Two hours later you have a clip. The person left the building before you knew there was anything to look at.</p>
+      <div><span class="chip crit">Found after the fact</span></div>
+    </div>
+    <div class="card">
+      <span class="tag">With Nightwatch</span>
+      <h3>Event → notification → response</h3>
+      <p>The same moment produces a message on the floor manager's phone within seconds — a snapshot, a ten-second clip, the camera, the zone, and a plain-English description of what was seen. The decision to respond is made while responding is still possible.</p>
+      <div><span class="chip ok">Seen as it happens</span></div>
+    </div>
+  </div>
+  <p class="kicker">The footage was never the problem. The reviewing was.</p>
+  <div class="osd">
+    <span class="rec"></span><b>Problem</b><span class="grow"></span><span>Response time</span><span>03 / 12</span>
+  </div>
+</section>
+
+<!-- 04 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">What we install</div>
+  <h2>One box. Your existing cameras. Nothing gets ripped out.</h2>
+  <div class="cols c3">
+    <div class="card">
+      <span class="tag">Hardware</span>
+      <h3>A small appliance in your control room</h3>
+      <p>It sits on the same network as your NVR and pulls the streams you already record. Your DVR/NVR, cameras, cabling and recording policy stay exactly as they are.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Network</span>
+      <h3>Outbound connection only</h3>
+      <p>No port forwarding, no static IP, no inbound firewall rule, no VPN into your network. The box dials out; nothing dials in.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Effort</span>
+      <h3>Half a day to running</h3>
+      <p>Discovery finds the cameras on your NVR automatically. We name the zones with your team, set what matters where, and you are receiving events the same day.</p>
+    </div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Solution</b><span class="grow"></span><span>Install</span><span>04 / 12</span>
+  </div>
+</section>
+
+<!-- 05 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">How it works</div>
+  <h2>The video stays in the building. Only the events leave.</h2>
+  <div class="boundary" data-label="Your premises">
+    <div class="flow">
+      <div class="node">
+        <span class="where">Existing</span>
+        <h3>Your NVR &amp; cameras</h3>
+        <p>Unchanged. Nightwatch reads the streams over your LAN.</p>
+      </div>
+      <div class="arrow"><span>──▶</span><em>LAN</em></div>
+      <div class="node here">
+        <span class="where">Nightwatch box</span>
+        <h3>Watches every feed, continuously</h3>
+        <p>Analyses frames on premises. Discards everything uneventful without it ever leaving the building.</p>
+      </div>
+      <div class="arrow"><span>──▶</span><em>Events only</em></div>
+      <div class="node">
+        <span class="where">Off-site</span>
+        <h3>Your dashboard &amp; phones</h3>
+        <p>A description, a snapshot, a ten-second clip, a timestamp, a camera. Never a live feed of your mall.</p>
+      </div>
+    </div>
+  </div>
+  <div class="cols c3">
+    <div class="card"><span class="tag">Bandwidth</span><p>A continuous 300-camera video uplink would be unaffordable and unreliable. We never build one — an event is a few hundred kilobytes.</p></div>
+    <div class="card"><span class="tag">If the internet drops</span><p>The box keeps analysing and queues events locally, then delivers them when the link returns. Detection does not depend on connectivity.</p></div>
+    <div class="card"><span class="tag">Live view</span><p>When someone does open a camera, that stream goes device-to-browser directly. It is not stored or relayed through us.</p></div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Solution</b><span class="grow"></span><span>Architecture</span><span>05 / 12</span>
+  </div>
+</section>
+
+<!-- 06 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">What it watches for</div>
+  <h2>Different rules for different parts of your mall.</h2>
+  <p>You draw the zone on the camera image and say what matters there. A corridor at 3 AM and an atrium at 3 PM are not the same problem, and they do not get the same rule.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Where</th><th>What you tell it to care about</th><th>Who hears about it</th></tr></thead>
+      <tbody>
+        <tr><td>Jewellery &amp; high-value line</td><td>Any person present outside trading hours</td><td>Control room + duty manager, instantly</td></tr>
+        <tr><td>Service &amp; staff-only corridors</td><td>Anyone entering who should not be there</td><td>Control room</td></tr>
+        <tr><td>Loading bay</td><td>Vehicle or person movement after closing</td><td>Duty manager</td></tr>
+        <tr><td>Fire exits &amp; escape routes</td><td>Blocked route, or anything parked in the lane</td><td>Facilities, as a daily standing report</td></tr>
+        <tr><td>Parking levels</td><td>A person lingering between vehicles</td><td>Control room</td></tr>
+        <tr><td>Shutters after close</td><td>Movement at a shutter line once the mall is shut</td><td>Duty manager + security head</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="kicker">Every one of these is a setting, not a custom build. You change them yourself, per camera, any time.</p>
+  <div class="osd">
+    <span class="rec"></span><b>Capability</b><span class="grow"></span><span>Zones &amp; rules</span><span>06 / 12</span>
+  </div>
+</section>
+
+<!-- 07 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">The part nobody else does</div>
+  <h2>Describe what you want watched. In English.</h2>
+  <div class="cols c2">
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <p>Most systems make you pick from a fixed menu of detections. Nightwatch lets your security head describe the situation in their own words, asks a clarifying question if it needs one, and builds the rule.</p>
+      <p>Nothing is switched on until a person reviews the draft and presses save. The AI proposes; your team decides.</p>
+      <div><span class="chip acc">Reviewed before it goes live</span></div>
+    </div>
+    <div class="term">
+      <div class="bar">New rule — Level 2 · Camera 14</div>
+      <div class="body">
+        <div class="msg you"><span class="who">You</span><span class="txt">Tell me if someone is at the counter more than three minutes with no staff around.</span></div>
+        <div class="msg nw"><span class="who">NW</span><span class="txt">Which counter — the till zone or the display side? And should this apply during trading hours or all the time?</span></div>
+        <div class="msg you"><span class="who">You</span><span class="txt">The till. All the time. Message the floor manager.</span></div>
+        <div class="msg nw"><span class="who">NW</span><span class="txt">Draft ready: person in "Till" zone, 3 min, no second person present → WhatsApp Floor Manager. Review and save.</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Capability</b><span class="grow"></span><span>Plain-English rules</span><span>07 / 12</span>
+  </div>
+</section>
+
+<!-- 08 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">Instead of scrubbing footage</div>
+  <h2>Ask the system what happened.</h2>
+  <div class="cols c2">
+    <div class="term">
+      <div class="bar">Ask · Level 1 · Yesterday</div>
+      <div class="body">
+        <div class="msg you"><span class="who">You</span><span class="txt">Anything near the food court between 9 and 11 last night?</span></div>
+        <div class="msg nw"><span class="who">NW</span><span class="txt">Four events. Three were staff closing up. One at 22:41 — a person in the service corridor behind unit F-12 for six minutes after the unit had shut. Snapshot and clip attached.</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <h3>And a written summary, twice a day</h3>
+      <p>A recap lands each morning covering the night, and each evening covering the day — what happened, where, and what stood out. Your security head reads a paragraph instead of opening a system.</p>
+      <ul class="ticks">
+        <li>Delivered to WhatsApp and email, on your mall's own schedule</li>
+        <li>Quiet night with nothing to report says so, in one line</li>
+        <li>Every claim in it links back to the event and the clip behind it</li>
+      </ul>
+    </div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Capability</b><span class="grow"></span><span>Search &amp; digests</span><span>08 / 12</span>
+  </div>
+</section>
+
+<!-- 09 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">Who sees what</div>
+  <h2>The right person, not everyone.</h2>
+  <div class="cols c4">
+    <div class="card">
+      <span class="tag">Control room</span>
+      <h3>Everything, live</h3>
+      <p>The full event feed as it arrives, across every camera, with live view one click away.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Floor / duty manager</span>
+      <h3>Their floor, on their phone</h3>
+      <p>WhatsApp for anything urgent in their area. No app to install, no login to remember at 2 AM.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Security head</span>
+      <h3>The pattern, not the noise</h3>
+      <p>Daily summaries, event history, and the ability to change what any camera watches for.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Mall management</span>
+      <h3>The record</h3>
+      <p>A searchable, timestamped account of incidents — for insurers, tenants, and police requests.</p>
+    </div>
+  </div>
+  <p class="kicker">Accounts are per person, with a full audit trail of who viewed and changed what.</p>
+  <div class="osd">
+    <span class="rec"></span><b>Operations</b><span class="grow"></span><span>Roles</span><span>09 / 12</span>
+  </div>
+</section>
+
+<!-- 10 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">The questions your IT team will ask</div>
+  <h2>Answered before they ask them.</h2>
+  <div class="cols c3">
+    <div class="card"><span class="tag">Data residency</span><h3>Video does not leave your premises</h3><p>Continuous footage is analysed on the box and discarded there. What leaves is an event: a description, one snapshot, a short clip.</p></div>
+    <div class="card"><span class="tag">Network exposure</span><h3>No inbound access to your LAN</h3><p>Outbound connection only. No port forwarding, no VPN tunnel into your network, no inbound firewall change.</p></div>
+    <div class="card"><span class="tag">Credentials</span><h3>No permanent keys on the box</h3><p>The appliance holds no standing cloud credentials. It is issued short-lived, revocable access. Pulling its authorisation cuts it off within minutes.</p></div>
+    <div class="card"><span class="tag">Identity</span><h3>No facial recognition</h3><p>We detect people, vehicles and behaviour in a zone. We do not build a face database or identify individuals. This is a deliberate product decision.</p></div>
+    <div class="card"><span class="tag">Isolation</span><h3>Your data is scoped to you</h3><p>Every record is bound to your organisation and site, enforced on each query — not by convention in the interface.</p></div>
+    <div class="card"><span class="tag">Accountability</span><h3>Everything is logged</h3><p>Who logged in, who viewed which camera, who changed which rule, and when — retained and exportable.</p></div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Trust</b><span class="grow"></span><span>Security &amp; privacy</span><span>10 / 12</span>
+  </div>
+</section>
+
+<!-- 11 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">What we are asking for today</div>
+  <h2>One zone. Thirty days. You set the pass mark.</h2>
+  <div class="ask">
+    <h3 style="font-size:clamp(18px,2vw,26px);">A pilot on 12 cameras in a single zone of your choosing</h3>
+    <p style="color:var(--ink);">Pick the area that worries you most — the parking levels, the service corridors, the high-value line. We install in half a day, run for thirty days, and review the results against criteria you define before we start.</p>
+    <div class="cols c3" style="margin-top:6px;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <span class="chip acc">We bring</span>
+        <ul class="ticks">
+          <li>The appliance, on loan for the pilot</li>
+          <li>Setup, zone configuration, and training for your team</li>
+          <li>A named contact for the full thirty days</li>
+        </ul>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <span class="chip">You provide</span>
+        <ul class="ticks warnmark">
+          <li>NVR access on the LAN and one wired network port</li>
+          <li>One nominated person from the security team</li>
+          <li>Thirty minutes at the start, and an hour at the end</li>
+        </ul>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <span class="chip ok">We measure</span>
+        <ul class="ticks">
+          <li>Events surfaced that your team would not otherwise have seen</li>
+          <li>Time from incident to the right person knowing</li>
+          <li>False alarms per camera per day, and whether tuning reduces them</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <p class="kicker">If it does not clear the bar you set, we take the box back and you have lost a day.</p>
+  <div class="osd">
+    <span class="rec"></span><b>The ask</b><span class="grow"></span><span>Pilot</span><span>11 / 12</span>
+  </div>
+</section>
+
+<!-- 12 ------------------------------------------------------------------ -->
+<section class="slide">
+  <div class="eyebrow">Next step</div>
+  <h1 style="font-size:clamp(32px,5vw,68px);">Which zone worries<br>you most?</h1>
+  <p class="lead">That is the one we should start with. Tell us the area and we will scope the pilot around it before we leave.</p>
+  <hr class="rule">
+  <div class="cols c3">
+    <div class="stat"><span class="k">Install time</span><span class="n acc" style="font-size:clamp(24px,2.6vw,34px);">Half a day</span></div>
+    <div class="stat"><span class="k">Pilot length</span><span class="n acc" style="font-size:clamp(24px,2.6vw,34px);">30 days</span></div>
+    <div class="stat"><span class="k">Changes to your CCTV</span><span class="n acc" style="font-size:clamp(24px,2.6vw,34px);">None</span></div>
+  </div>
+  <div class="osd">
+    <span class="rec"></span><b>Nightwatch</b><span class="grow"></span><span>Thank you</span><span>12 / 12</span>
+  </div>
+</section>
+
+</div>
