@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import { useChatContextStore } from "@/lib/chatContext";
 import { SeverityBadge } from "@/components/shared/severity-badge";
+import { JourneyCard } from "@/components/map/JourneyCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export default function EventDetailPage() {
@@ -118,6 +119,10 @@ export default function EventDetailPage() {
           {(event.confidence * 100).toFixed(0)}% confidence
         </span>
       </div>
+
+      {/* Renders nothing unless this event correlates with activity on a
+          connected camera — which is the case for most events. */}
+      <JourneyCard eventId={event.id} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Media */}
