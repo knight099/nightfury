@@ -174,6 +174,29 @@ def _apply(camera: Camera, proposal: dict) -> None:
     camera.counting_lines = list(proposal.get("counting_lines") or [])
 
 
+async def _maybe_complete_run(run_id: uuid.UUID, db: AsyncSession) -> None:
+    """Mark a run complete once every one of its proposals is terminal.
+
+    Shared by both approve endpoints so the run's status reflects reality
+    whether cameras are approved one at a time or as a bulk group.
+    """
+    rows = list(
+        (
+            await db.execute(
+                select(CameraSetupProposal).where(CameraSetupProposal.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if rows and all(r.status in ("approved", "rejected") for r in rows):
+        run = (
+            await db.execute(select(SetupRun).where(SetupRun.id == run_id))
+        ).scalar_one_or_none()
+        if run is not None:
+            run.status = "complete"
+
+
 @router.post("/setup-proposals/{proposal_id}/approve", response_model=ProposalResponse)
 async def approve_proposal(
     proposal_id: uuid.UUID,
@@ -197,7 +220,14 @@ async def approve_proposal(
         )
 
     camera = (
-        await db.execute(select(Camera).where(Camera.id == row.camera_id))
+        await db.execute(
+            select(Camera).where(
+                Camera.id == row.camera_id,
+                Camera.org_id == row.org_id,
+                Camera.site_id == row.site_id,
+                Camera.deleted_at.is_(None),
+            )
+        )
     ).scalar_one_or_none()
     if camera is None:
         raise HTTPException(status_code=404, detail="Camera not found")
@@ -206,6 +236,7 @@ async def approve_proposal(
     row.status = "approved"
     row.approved_by = user.id
     row.approved_at = datetime.now(timezone.utc)
+    await _maybe_complete_run(row.run_id, db)
     await db.flush()
     return ProposalResponse.model_validate(row)
 
@@ -247,7 +278,14 @@ async def approve_group(
     cameras = {
         c.id: c
         for c in (
-            await db.execute(select(Camera).where(Camera.id.in_(camera_ids)))
+            await db.execute(
+                select(Camera).where(
+                    Camera.id.in_(camera_ids),
+                    Camera.org_id == run.org_id,
+                    Camera.site_id == run.site_id,
+                    Camera.deleted_at.is_(None),
+                )
+            )
         ).scalars().all()
     }
 
@@ -264,7 +302,6 @@ async def approve_group(
         row.approved_by = user.id
         row.approved_at = now
 
-    if all(r.status in ("approved", "rejected") for r in rows):
-        run.status = "complete"
+    await _maybe_complete_run(run.id, db)
     await db.flush()
     return await _run_response(run, db)
