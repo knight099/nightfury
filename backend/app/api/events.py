@@ -163,38 +163,53 @@ async def event_stats(
     if site_id:
         base = base.where(Event.site_id == site_id)
 
-    result = await db.execute(base)
-    events = result.scalars().all()
+    # Aggregate in SQL, not in Python.
+    #
+    # This used to load every event in the window into ORM objects and count
+    # them in a loop. At 400 cameras that is ~360k rows for period=30d, which
+    # measured at 4+ seconds just to fetch — before any counting — and holds
+    # all of it in memory at once. Every figure below is a GROUP BY, so the
+    # database does the work and returns tens of rows instead of hundreds of
+    # thousands.
+    #
+    # `base` carries the org/site scoping built above; every aggregate reuses
+    # its WHERE clause verbatim so the scoping cannot drift between them.
+    where = base.whereclause
 
-    by_type: dict[str, int] = {}
-    by_severity: dict[str, int] = {}
-    reviewed = 0
-    rejected = 0
+    def agg(*columns):
+        return select(*columns).select_from(Event).where(where)
 
-    for e in events:
-        by_type[e.event_type] = by_type.get(e.event_type, 0) + 1
-        by_severity[e.severity] = by_severity.get(e.severity, 0) + 1
-        if e.feedback:
-            reviewed += 1
-            if e.feedback == "rejected":
-                rejected += 1
+    type_rows = (await db.execute(
+        agg(Event.event_type, func.count()).group_by(Event.event_type)
+    )).all()
+    by_type = {r[0]: r[1] for r in type_rows}
 
-    total = len(events)
+    sev_rows = (await db.execute(
+        agg(Event.severity, func.count()).group_by(Event.severity)
+    )).all()
+    by_severity = {r[0]: r[1] for r in sev_rows}
 
-    # Time-bucketed volume: hourly for the 24h view, daily otherwise — matches
-    # the same period options the endpoint already accepts.
-    bucket_by_day = period != "24h"
+    total = sum(by_severity.values())
+
+    feedback_rows = (await db.execute(
+        agg(Event.feedback, func.count()).group_by(Event.feedback)
+    )).all()
+    reviewed = sum(c for f, c in feedback_rows if f is not None)
+    rejected = sum(c for f, c in feedback_rows if f == "rejected")
+
+    # Time-bucketed volume: hourly for the 24h view, daily otherwise.
+    # date_trunc keeps bucketing in the database rather than materialising
+    # every timestamp to bucket it in Python.
+    grain = "hour" if period == "24h" else "day"
+    bucket_col = func.date_trunc(grain, Event.timestamp).label("bucket")
+    bucket_rows = (await db.execute(
+        agg(bucket_col, Event.severity, func.count())
+        .group_by("bucket", Event.severity)
+        .order_by("bucket")
+    )).all()
     buckets: dict[datetime, dict[str, int]] = {}
-    for e in events:
-        ts = e.timestamp
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        if bucket_by_day:
-            key = ts.replace(hour=0, minute=0, second=0, microsecond=0)
-        else:
-            key = ts.replace(minute=0, second=0, microsecond=0)
-        bucket = buckets.setdefault(key, {})
-        bucket[e.severity] = bucket.get(e.severity, 0) + 1
+    for bucket, severity, count in bucket_rows:
+        buckets.setdefault(bucket, {})[severity] = count
     time_series = [
         EventStatsTimeBucket(
             bucket=key,
@@ -204,30 +219,33 @@ async def event_stats(
         for key, sev_counts in sorted(buckets.items())
     ]
 
-    # Per-camera breakdown, folding anything past the top N into "Other" —
-    # never a generated per-camera hue/row past a bounded count.
-    camera_counts: dict[uuid.UUID, int] = {}
-    for e in events:
-        camera_counts[e.camera_id] = camera_counts.get(e.camera_id, 0) + 1
+    # Per-camera breakdown, folding anything past the top N into "Other" so
+    # the response stays bounded however many cameras a site has. The tail is
+    # summed in SQL rather than by fetching every camera's row.
+    camera_rows = (await db.execute(
+        agg(Event.camera_id, func.count().label("n"))
+        .group_by(Event.camera_id)
+        .order_by(func.count().desc())
+    )).all()
 
+    top = camera_rows[:MAX_CAMERA_BREAKDOWN_ROWS]
     camera_names: dict[uuid.UUID, str] = {}
-    if camera_counts:
+    if top:
         cam_result = await db.execute(
-            select(Camera.id, Camera.name).where(Camera.id.in_(camera_counts.keys()))
+            select(Camera.id, Camera.name).where(Camera.id.in_([r[0] for r in top]))
         )
         camera_names = {row[0]: row[1] for row in cam_result.all()}
 
-    ranked = sorted(camera_counts.items(), key=lambda kv: kv[1], reverse=True)
     by_camera = [
         EventStatsCameraBreakdown(
             camera_id=cam_id,
             camera_name=camera_names.get(cam_id, "Unknown camera"),
             count=count,
         )
-        for cam_id, count in ranked[:MAX_CAMERA_BREAKDOWN_ROWS]
+        for cam_id, count in top
     ]
-    if len(ranked) > MAX_CAMERA_BREAKDOWN_ROWS:
-        other_count = sum(count for _, count in ranked[MAX_CAMERA_BREAKDOWN_ROWS:])
+    if len(camera_rows) > MAX_CAMERA_BREAKDOWN_ROWS:
+        other_count = sum(c for _, c in camera_rows[MAX_CAMERA_BREAKDOWN_ROWS:])
         by_camera.append(
             EventStatsCameraBreakdown(camera_id=None, camera_name="Other", count=other_count)
         )
