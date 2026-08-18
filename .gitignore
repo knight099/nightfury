@@ -61,3 +61,4 @@ agent/nightwatch-agent
 
 # Private keys / secrets
 *.pem
+.scratch/

@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ToggleLeft, ToggleRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
-import type { User, WhatsAppAlertContact } from "@/types";
+import { StatusDot } from "@/components/shared/status-dot";
+import type { Camera, User, WhatsAppAlertContact } from "@/types";
 
 type SettingsTab = "organization" | "sites" | "team" | "whatsapp-alerts";
 
@@ -21,9 +22,18 @@ export default function SettingsPage() {
   const { user } = useAuthStore();
   const isSuperAdmin = user?.role === "super_admin";
   const isOwner = user?.role === "owner" || isSuperAdmin;
+  // Sites are readable by every role (the API has no role gate on listing).
+  // Creating/editing/deleting requires admin or above, matching
+  // require_role(user, "admin") on the backend's site routes.
+  const canManageSites = isOwner || user?.role === "admin";
   const canViewTeam = !!user?.org_id;
   const [activeTab, setActiveTab] = useState<SettingsTab>("organization");
   const [showDeletedSites, setShowDeletedSites] = useState(false);
+
+  const { data: cameras } = useQuery({
+    queryKey: ["cameras"],
+    queryFn: () => api.getCameras(),
+  });
 
   const { data: org } = useQuery({
     queryKey: ["settings", "org"],
@@ -74,10 +84,12 @@ export default function SettingsPage() {
 
           {activeTab === "organization" && org && <OrgSection org={org} canEdit={isOwner} />}
 
-          {activeTab === "sites" && org && sites && isOwner && (
+          {activeTab === "sites" && org && sites && (
             <SiteSection
               sites={sites}
+              cameras={cameras || []}
               isSuperAdmin={isSuperAdmin}
+              canManage={canManageSites}
               showDeleted={showDeletedSites}
               onToggleShowDeleted={setShowDeletedSites}
               onMutate={() => queryClient.invalidateQueries({ queryKey: ["settings", "sites"] })}
@@ -144,13 +156,17 @@ function OrgSection({ org, canEdit }: { org: { id: string; name: string; slug: s
 
 function SiteSection({
   sites,
+  cameras,
   isSuperAdmin,
+  canManage,
   showDeleted,
   onToggleShowDeleted,
   onMutate,
 }: {
   sites: { id: string; org_id: string; name: string; address: string | null; timezone: string; created_at: string; deleted_at?: string | null }[];
+  cameras: Camera[];
   isSuperAdmin: boolean;
+  canManage: boolean;
   showDeleted: boolean;
   onToggleShowDeleted: (v: boolean) => void;
   onMutate: () => void;
@@ -208,7 +224,11 @@ function SiteSection({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#F5F5F5]">Sites</h2>
-          <p className="text-xs text-[#A3A3A3]">Create locations like Home, Office, or Warehouse to group cameras.</p>
+          <p className="text-xs text-[#A3A3A3]">
+            {canManage
+              ? "Create locations like Home, Office, or Warehouse to group cameras."
+              : "Locations your cameras are grouped by."}
+          </p>
           {isSuperAdmin && (
             <label className="mt-1 flex items-center gap-2 text-xs text-[#A3A3A3]">
               <input
@@ -221,12 +241,14 @@ function SiteSection({
             </label>
           )}
         </div>
-        <button
-          onClick={() => setShowCreate((v) => !v)}
-          className="px-3 py-1.5 bg-[#1E90FF] text-white text-sm rounded-md hover:bg-[#3BA0FF] transition-colors"
-        >
-          {showCreate ? "Close" : "+ Create Site"}
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowCreate((v) => !v)}
+            className="px-3 py-1.5 bg-[#1E90FF] text-white text-sm rounded-md hover:bg-[#3BA0FF] transition-colors"
+          >
+            {showCreate ? "Close" : "+ Create Site"}
+          </button>
+        )}
       </div>
 
       {showCreate && (
@@ -247,7 +269,9 @@ function SiteSection({
       <div className="space-y-2">
         {sites.length === 0 ? (
           <div className="text-sm text-[#A3A3A3] border border-dashed border-[#2A2A2A] rounded-lg p-4">
-            No sites created yet. Add one so cameras can be organized by location.
+            {canManage
+              ? "No sites created yet. Add one so cameras can be organized by location."
+              : "No sites yet. Ask an admin to add one before cameras can be organised by location."}
           </div>
         ) : (
           sites.map((site) => (
@@ -272,9 +296,10 @@ function SiteSection({
                     <div className="text-xs text-[#A3A3A3]">
                       {site.address ? site.address : "No address set"} · {site.timezone} · Created {new Date(site.created_at).toLocaleDateString()}
                     </div>
+                    <SiteCameras cameras={cameras.filter((c) => c.site_id === site.id)} />
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    {site.deleted_at ? (
+                    {!canManage ? null : site.deleted_at ? (
                       <button
                         onClick={() => restoreMutation.mutate(site.id)}
                         className="text-xs px-3 py-1.5 text-[#A3A3A3] hover:text-[#4ADE80] transition-colors"
@@ -711,5 +736,27 @@ function WhatsAppContactForm({
         Cancel
       </button>
     </form>
+  );
+}
+
+
+function SiteCameras({ cameras }: { cameras: Camera[] }) {
+  if (cameras.length === 0) {
+    return <div className="text-xs text-[#666666]">No cameras at this site yet</div>;
+  }
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-[#666666]">
+        {cameras.length} camera{cameras.length === 1 ? "" : "s"}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1">
+        {cameras.map((camera) => (
+          <li key={camera.id} className="flex items-center gap-1.5 text-xs text-[#A3A3A3]">
+            <StatusDot status={camera.status} />
+            <span className="truncate max-w-[14rem]">{camera.name}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
