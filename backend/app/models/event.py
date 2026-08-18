@@ -12,6 +12,9 @@ class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         Index("ix_events_org_timestamp", "org_id", text("timestamp DESC")),
+        # The shift-handover query — "what is still open here" — is the one a
+        # control room runs constantly, and it filters on status before time.
+        Index("ix_events_org_status_timestamp", "org_id", "status", text("timestamp DESC")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -32,6 +35,30 @@ class Event(Base):
     ai_model: Mapped[str] = mapped_column(String(50), default="gemini-2.0-flash")
     ai_response_raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ─── Operational state (was this WORKED?) ──────────────────────────────
+    # Deliberately separate from the `feedback` fields below, which answer a
+    # different question: "was the detection correct?". A true detection can
+    # be unresolved and a false one can be dismissed — collapsing them would
+    # make "the AI got it right" indistinguishable from "somebody dealt with
+    # it", and a control room needs both.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="new", server_default="new"
+    )  # new, acknowledged, resolved, dismissed
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ─── Detection quality (was this RIGHT?) ───────────────────────────────
     feedback: Mapped[str | None] = mapped_column(String(20), nullable=True)  # approved, rejected, reclassified
     feedback_label: Mapped[str | None] = mapped_column(String(50), nullable=True)
     feedback_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
