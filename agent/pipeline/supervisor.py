@@ -198,6 +198,13 @@ class WorkerSupervisor:
         while True:
             try:
                 await asyncio.sleep(SETUP_POLL_INTERVAL)
+                # The backend pops these jobs off Redis destructively, so a job
+                # is consumed the instant it is fetched here — not once it is
+                # answered. A job lost to cancellation or a crash mid-analysis
+                # is NOT redelivered; its camera_setup_proposals row just stays
+                # "pending" until an operator retries the setup run. Do not add
+                # retry/re-enqueue logic here that assumes redelivery — it does
+                # not exist.
                 jobs = await self.api_client.get_setup_jobs()
                 if not jobs:
                     continue
