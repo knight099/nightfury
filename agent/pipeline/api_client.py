@@ -244,6 +244,27 @@ class ApiClient:
                 if remaining_ids:
                     await self.queue.increment_attempts(remaining_ids)
 
+    async def get_setup_jobs(self) -> list[dict]:
+        """Drain camera-setup jobs for this box. Empty list on any failure."""
+        try:
+            resp = await self.client.get("/api/agents/me/setup-jobs")
+            if resp.status_code != 200:
+                return []
+            return resp.json().get("jobs", [])
+        except Exception as e:
+            logger.debug(f"setup jobs fetch failed: {e}")
+            return []
+
+    async def post_setup_result(self, camera_id: str, payload: dict) -> bool:
+        try:
+            resp = await self.client.post(
+                f"/api/agents/me/setup-jobs/{camera_id}", json=payload
+            )
+            return resp.status_code in (200, 204)
+        except Exception as e:
+            logger.warning(f"setup result post failed for {camera_id}: {e}")
+            return False
+
     async def close(self):
         # Cancel any in-flight drain tasks before closing the httpx client
         # to avoid RuntimeError from posting through an aclosed client.

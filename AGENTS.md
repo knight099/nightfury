@@ -300,6 +300,21 @@ GitHub Actions workflow at `.github/workflows/deploy.yml` handles:
 **Future (partially done):**
 - ✅ Live video via WebRTC (relay path): relay/webrtcsignal/viewer.go serves H.264 video track to browser; backend POST /api/cameras/{id}/webrtc-offer proxies offer to relay with HMAC-signed view_token; frontend WebRTCPlayer component tries WebRTC first, falls back to MJPEG, then snapshot polling. STREAM_TOKEN_SECRET shared between backend and relay. TURN server not yet configured (works on LAN / same-network; may need TURN for NAT traversal in production).
 
+### Agentic Camera Setup (COMPLETE)
+- Operator selects a batch of cameras (max 50); backend enqueues one setup job
+  per camera onto that camera's own agent's Redis list
+- The **Python pipeline** (not the Go agent) drains the jobs: samples 10 frames
+  over 3 minutes, makes one structured Gemini Vision call, posts back a proposal
+- Backend validates the proposal and clusters the batch by a closed `scene_type`
+  enum; low-confidence, invalid, or `other` proposals go to "Needs your input"
+  and can never be bulk-approved
+- Approval is the ONLY path that writes camera config. `suggested_alert` is
+  stored in the proposal and shown in the UI, but approval never writes an
+  alert rule — alert rules remain a separate, per-camera confirmation step
+- Camera adjacency is deliberately NOT proposed — it is not visible in frames.
+  The flow prompts the operator to draw it on `/map` after a batch is approved
+- Design: `docs/superpowers/specs/2026-08-18-agentic-camera-setup-design.md`
+
 ## Monorepo Structure
 ```
 Vision/

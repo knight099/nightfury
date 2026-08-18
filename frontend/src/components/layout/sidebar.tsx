@@ -17,6 +17,7 @@ import {
   Server,
   Grid3x3,
   Waypoints,
+  Wand2,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/alerts", label: "Alerts", icon: Bell, tourId: "nav-alerts" },
   { href: "/wall", label: "Video wall", icon: Grid3x3, tourId: "nav-wall" },
   { href: "/map", label: "Camera map", icon: Waypoints, tourId: "nav-map" },
+  { href: "/setup", label: "Camera setup", icon: Wand2, tourId: "nav-setup" },
   { href: "/fleet", label: "Fleet", icon: Server, tourId: "nav-fleet" },
   { href: "/test-camera", label: "Test AI", icon: Video, tourId: "nav-test" },
   { href: "/usage", label: "Usage", icon: BarChart3, tourId: "nav-usage" },

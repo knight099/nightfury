@@ -172,6 +172,28 @@ class GeminiClient:
                 self._record_failure()
                 return []
 
+    async def generate_text_with_images(self, prompt: str, images: list[bytes]) -> str:
+        """One text reply grounded in several JPEG frames.
+
+        Used by scene analysis at setup time, not on the detection hot path.
+        It deliberately bypasses the circuit breaker guarding analyze_frame
+        (no check of circuit_open_until, no _record_failure() on error) —
+        a setup run failing must never open the breaker that detection
+        depends on. Errors are raised to the caller instead.
+        """
+        await self._ensure_token()
+        if self.client is None:
+            raise RuntimeError("no usable Gemini client")
+
+        parts = [Part.from_text(text=prompt)]
+        parts.extend(Part.from_bytes(data=img, mime_type="image/jpeg") for img in images)
+
+        response = await self.client.aio.models.generate_content(
+            model=self.model,
+            contents=parts,
+        )
+        return response.text or ""
+
     def _is_auth_error(self, e: Exception) -> bool:
         msg = str(e).lower()
         return any(s in msg for s in ("credential", "unauthenticated", "unauthorized", "401", "403", "permission"))

@@ -4,6 +4,7 @@ from app.models.user import User
 from app.models.site import Site
 from app.models.camera import Camera
 from app.models.camera_connection import CameraConnection
+from app.models.camera_setup import CameraSetupProposal, SetupRun
 from app.models.footfall_count import FootfallCount
 from app.models.event import Event
 from app.models.alert_rule import AlertRule
@@ -24,6 +25,8 @@ __all__ = [
     "Site",
     "Camera",
     "CameraConnection",
+    "CameraSetupProposal",
+    "SetupRun",
     "Event",
     "AlertRule",
     "AlertHistory",

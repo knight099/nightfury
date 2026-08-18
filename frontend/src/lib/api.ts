@@ -21,6 +21,8 @@ import type {
   FleetResponse,
   CameraConnection,
   Journey,
+  SetupRun,
+  SetupRunSummary,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -568,6 +570,36 @@ class ApiClient {
     return this.request<{ agent_id: string; org_id: string; message: string }>("/api/devices/claim", {
       method: "POST",
       body: JSON.stringify({ code, ...(orgId ? { org_id: orgId } : {}) }),
+    });
+  }
+
+  // ─── Agentic camera setup ────────────────────────────────────────────────
+
+  async startSetupRun(siteId: string, cameraIds: string[]) {
+    return this.request<SetupRun>(`/api/sites/${siteId}/setup-runs`, {
+      method: "POST",
+      body: JSON.stringify({ camera_ids: cameraIds }),
+    });
+  }
+
+  async getSetupRun(runId: string) {
+    return this.request<SetupRun>(`/api/setup-runs/${runId}`);
+  }
+
+  async getSetupRuns(siteId: string) {
+    return this.request<SetupRunSummary[]>(`/api/sites/${siteId}/setup-runs`);
+  }
+
+  async approveSetupProposal(proposalId: string) {
+    return this.request<unknown>(`/api/setup-proposals/${proposalId}/approve`, {
+      method: "POST",
+    });
+  }
+
+  async approveSetupGroup(runId: string, sceneType: string) {
+    return this.request<SetupRun>(`/api/setup-runs/${runId}/approve-group`, {
+      method: "POST",
+      body: JSON.stringify({ scene_type: sceneType }),
     });
   }
 }
