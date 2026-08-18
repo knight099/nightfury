@@ -17,6 +17,13 @@ class Camera(Base, TimestampMixin, SoftDeleteMixin):
     agent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True, index=True
     )
+    # Operator override: when set, the placement reconciler must put this
+    # camera on this agent and never move it. Distinct from agent_id, which is
+    # the reconciler's own output — conflating them would make an automatic
+    # placement indistinguishable from a deliberate human one.
+    pinned_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
 
     ingest_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # rtsp_pull, rtmp_push, srt_push
@@ -26,6 +33,8 @@ class Camera(Base, TimestampMixin, SoftDeleteMixin):
     enabled_events: Mapped[list] = mapped_column(ARRAY(String), default=list)
     detection_zones: Mapped[list] = mapped_column(JSONB, default=list)
     step_sequence: Mapped[list] = mapped_column(JSONB, default=list)
+    # Operator-drawn counting lines: [{name, x1, y1, x2, y2}] in frame pixels.
+    counting_lines: Mapped[list] = mapped_column(JSONB, default=list)
     reid_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sensitivity: Mapped[str] = mapped_column(String(10), default="medium")  # low, medium, high
 
