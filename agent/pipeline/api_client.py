@@ -37,6 +37,11 @@ class ApiClient:
             logger.error(f"Failed to initialize offline queue: {e}")
             self.queue = None
 
+        # Assignment ETag + last known set, so an unchanged placement answers
+        # 304 and the reconcile diff sees "no change" rather than "empty".
+        self._assignments_etag: str | None = None
+        self._assignments_cache: list[dict] = []
+
         self._drain_lock: asyncio.Lock = asyncio.Lock()
         self._last_drain_at: float = 0.0
         self._drain_min_interval: float = 30.0  # seconds
@@ -82,14 +87,44 @@ class ApiClient:
         except Exception as e:
             logger.error(f"Failed to enqueue event to offline buffer: {e}")
 
+    async def send_agent_heartbeat(
+        self,
+        cameras: list[dict],
+        capacity_cameras: int,
+        capacity_source: str,
+        load_state: str,
+        load_reason: str | None,
+        rejected_cameras: list[str],
+    ) -> bool:
+        """Send ONE heartbeat covering every camera on this box.
+
+        Replaces the per-camera post, which cost one HTTP request and one row
+        update per camera per round. Also carries the box's self-reported
+        capacity, which is what the backend's placement reconciler bounds
+        assignments by.
+        """
+        payload = {
+            "worker_id": config.worker_id,
+            "cameras": cameras,
+            "capacity_cameras": capacity_cameras,
+            "capacity_source": capacity_source,
+            "load_state": load_state,
+            "load_reason": load_reason,
+            "rejected_cameras": rejected_cameras,
+        }
+        return await self._post_heartbeat(payload)
+
     async def send_heartbeat(self, camera_id: str, status: str, metrics: dict) -> bool:
-        """Send health heartbeat for a camera."""
+        """Send a single-camera heartbeat (legacy shape, still accepted)."""
         payload = {
             "worker_id": config.worker_id,
             "camera_id": camera_id,
             "status": status,
             **metrics,
         }
+        return await self._post_heartbeat(payload)
+
+    async def _post_heartbeat(self, payload: dict) -> bool:
         try:
             resp = await self.client.post("/internal/heartbeat", json=payload)
             ok = resp.status_code == 200
@@ -112,18 +147,29 @@ class ApiClient:
         return ok
 
     async def get_assignments(self) -> list[dict] | None:
-        """Get camera assignments for this worker from the backend.
+        """Get this agent's camera assignments from the backend.
 
         Returns the list of assignment dicts on success, or None if the
         backend was unreachable / returned a non-200 response. Callers should
         treat None as a transient failure (do not reconcile this tick).
+
+        Uses If-None-Match so an unchanged assignment set costs a 304 rather
+        than a full payload — the backend bumps the ETag only when the
+        placement reconciler actually moves something. A 304 is reported as
+        "no change" by returning the last known set, so the caller's diff is a
+        no-op rather than a spurious "stop everything".
         """
+        headers = {"If-None-Match": self._assignments_etag} if self._assignments_etag else {}
         try:
-            resp = await self.client.get("/internal/assignments")
+            resp = await self.client.get("/internal/assignments", headers=headers)
+            if resp.status_code == 304:
+                return self._assignments_cache
             if resp.status_code != 200:
                 logger.warning(f"assignments fetch failed: {resp.status_code}")
                 return None
-            return resp.json().get("assignments", [])
+            self._assignments_etag = resp.headers.get("ETag")
+            self._assignments_cache = resp.json().get("assignments", [])
+            return self._assignments_cache
         except Exception as e:
             logger.warning(f"assignments fetch error: {e}")
             return None

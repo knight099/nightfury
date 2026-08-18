@@ -6,11 +6,19 @@ import os
 from config import config
 from models import CameraConfig
 from camera_worker import CameraWorker
+from capacity import CapacityTracker
 from gemini_client import GeminiClient
 from api_client import ApiClient
 from mjpeg_server import MJPEGServer
 
 logger = logging.getLogger(__name__)
+
+# Sampling multiplier applied to every camera when the box is running above
+# its capacity. Uniform degradation across all cameras is almost always better
+# than perfect analysis on some and none on others — but it must be visible,
+# which is why it is reported as `load_state: degraded` with a reason rather
+# than applied silently.
+DEGRADED_LOAD_FACTOR = 0.5
 
 
 def _stream_signature(c: CameraConfig) -> tuple:
@@ -58,12 +66,19 @@ class WorkerSupervisor:
         self.api_client = ApiClient()  # used by supervisor for assignments; also brokers Gemini tokens
         self.gemini = GeminiClient(self.api_client)  # shared across all workers
         self.mjpeg_server = MJPEGServer(lambda cid: self.workers.get(cid))
+        # config.max_cameras is now a ceiling an operator can set, not the
+        # capacity itself — the box measures what it can actually run.
+        self.capacity = CapacityTracker(config.max_cameras)
+        # Cameras the backend assigned that this box could not start. Reported
+        # every heartbeat so the backend can mark them unassigned and place
+        # them elsewhere. Never silently dropped.
+        self.rejected: set[str] = set()
 
     async def run(self):
         """Main supervisor loop."""
         logger.info(
             f"Supervisor starting (worker_id={config.worker_id}, "
-            f"max_cameras={config.max_cameras})"
+            f"capacity={self.capacity.capacity}, ceiling={config.max_cameras})"
         )
 
         # Cold start: try backend assignments, fall back to cameras.json
@@ -71,7 +86,7 @@ class WorkerSupervisor:
         if not cameras:
             logger.warning("No cameras configured at cold start. Will retry via reconcile loop.")
 
-        for cam_config in cameras[:config.max_cameras]:
+        for cam_config in cameras:
             await self._start_worker(cam_config)
 
         await self.mjpeg_server.start()
@@ -152,13 +167,12 @@ class WorkerSupervisor:
             except Exception as e:
                 logger.error(f"Reconcile: update_config failed for {cid}: {e}")
 
+        # A camera that reappears in the desired set gets a fresh chance to
+        # start — its earlier rejection may have been a capacity condition
+        # that has since cleared.
+        self.rejected &= set(desired)
+
         for cid in to_start + to_restart:
-            if len(self.workers) >= config.max_cameras:
-                logger.warning(
-                    f"Reconcile: max_cameras ({config.max_cameras}) reached, "
-                    f"skipping {cid}"
-                )
-                continue
             await self._start_worker(desired[cid])
 
         if to_start or to_stop or to_restart or to_update:
@@ -169,17 +183,50 @@ class WorkerSupervisor:
             )
 
     async def _start_worker(self, cam_config: CameraConfig):
-        """Start a camera worker."""
+        """Start a camera worker, subject to admission control.
+
+        The backend's placement reconciler already bounds assignments by this
+        box's reported capacity, so hitting the limit here means the two views
+        have diverged (capacity was just revised downward, or an assignment
+        raced a revision). That is a safety valve, not the normal path — and
+        unlike the old ``cameras[:max_cameras]`` slice it is *reported*, so a
+        camera nobody is analysing shows up in the fleet view instead of
+        looking identical to a camera nobody configured.
+        """
         if cam_config.camera_id in self.workers:
             logger.warning(f"Worker already running for {cam_config.camera_id}")
+            return
+
+        hard_ceiling = max(self.capacity.capacity, config.max_cameras)
+        if len(self.workers) >= hard_ceiling:
+            self.rejected.add(cam_config.camera_id)
+            logger.warning(
+                f"Rejecting {cam_config.name} ({cam_config.camera_id}): "
+                f"{len(self.workers)} running, ceiling {hard_ceiling}. "
+                "Reported to backend for re-placement."
+            )
             return
 
         worker = CameraWorker(cam_config, self.gemini)
         try:
             await worker.start()
             self.workers[cam_config.camera_id] = worker
+            self.rejected.discard(cam_config.camera_id)
         except Exception as e:
             logger.error(f"Failed to start worker for {cam_config.name}: {e}")
+
+    def _apply_load_factor(self) -> None:
+        """Degrade sampling uniformly when running above capacity.
+
+        Rung 2 of the ladder: rather than dropping a camera outright (rung 3),
+        every camera on the box samples less often. Applied to the sampler's
+        multiplier, not to idle_fps/active_fps, so the stream signature is
+        unchanged and nothing restarts.
+        """
+        over = len(self.workers) > self.capacity.capacity
+        factor = DEGRADED_LOAD_FACTOR if over else 1.0
+        for worker in self.workers.values():
+            worker.frame_sampler.load_factor = factor
 
     async def _stop_worker(self, camera_id: str):
         """Stop a specific camera worker."""
@@ -193,15 +240,43 @@ class WorkerSupervisor:
             await self._stop_worker(camera_id)
 
     async def _health_check(self):
-        """Check worker health and send heartbeats."""
+        """Check worker health, revise capacity, and send ONE batched heartbeat."""
         dead_workers = []
+        camera_payloads = []
+        utilisations = []
 
         for camera_id, worker in self.workers.items():
+            # Read utilisation for every worker, alive or not — it resets the
+            # measurement window, and skipping dead ones would let a stale
+            # window inflate the next reading.
+            utilisations.append(worker.consume_utilisation())
             if not worker.is_alive:
                 dead_workers.append(camera_id)
                 logger.warning(f"Worker dead: {camera_id}")
             else:
-                await worker.send_heartbeat()
+                camera_payloads.append(worker.heartbeat_payload())
+
+        mean_utilisation = sum(utilisations) / len(utilisations) if utilisations else 0.0
+        self.capacity.observe(len(camera_payloads), mean_utilisation)
+        self._apply_load_factor()
+
+        # Rejected cameras are reported as their own entries so the backend can
+        # mark them unassigned — the fleet view's whole purpose is that these
+        # are visible rather than merely absent.
+        for camera_id in sorted(self.rejected):
+            camera_payloads.append({"camera_id": camera_id, "status": "unassigned"})
+
+        load_state, load_reason = self.capacity.load_state(
+            len(self.workers), len(self.rejected)
+        )
+        await self.api_client.send_agent_heartbeat(
+            cameras=camera_payloads,
+            capacity_cameras=self.capacity.capacity,
+            capacity_source=self.capacity.source,
+            load_state=load_state,
+            load_reason=load_reason,
+            rejected_cameras=sorted(self.rejected),
+        )
 
         # Restart dead workers
         for camera_id in dead_workers:
@@ -210,11 +285,12 @@ class WorkerSupervisor:
             logger.info(f"Restarting worker for {cam_config.name}")
             await self._start_worker(cam_config)
 
-        # Log summary
         active = sum(1 for w in self.workers.values() if w.is_alive)
         logger.info(
             f"Health: {active}/{len(self.workers)} cameras active | "
-            f"Gemini stats: {self.gemini.stats}"
+            f"capacity={self.capacity.capacity} ({self.capacity.source}) "
+            f"util={mean_utilisation:.2f} state={load_state} "
+            f"rejected={len(self.rejected)} | Gemini stats: {self.gemini.stats}"
         )
 
     def _load_camera_configs(self) -> list[CameraConfig]:
