@@ -10,6 +10,8 @@ Endpoints:
 - POST /api/agents/{agent_id}/cameras      (auth)   -> register a camera bound to the agent
 - GET  /api/agents/me/resolve-jobs         (agent)  -> drain pending ONVIF GetStreamUri jobs
 - POST /api/agents/me/resolve-jobs/{id}    (agent)  -> agent reports resolved RTSP URL
+- GET  /api/agents/me/setup-jobs           (agent)  -> drain pending camera-setup jobs
+- POST /api/agents/me/setup-jobs/{id}      (agent)  -> pipeline reports a setup proposal
 """
 import json
 import uuid
@@ -25,6 +27,7 @@ from app.core.dependencies import get_agent_from_token, get_current_user, scope_
 from app.core.redis import get_redis
 from app.models.agent import Agent
 from app.models.camera import Camera
+from app.models.camera_setup import CameraSetupProposal
 from app.models.organization import Organization
 from app.models.site import Site
 from app.models.user import User
@@ -45,6 +48,8 @@ from app.schemas.agent import (
     ResolveJobsResponse,
     ResolveResultRequest,
 )
+from app.schemas.camera_setup import SetupJob, SetupJobsResponse, SetupResultRequest
+from app.services.camera_setup.validator import validate_proposal
 from app.services.device_token_service import DeviceTokenService
 from app.services.pairing_service import PairingService
 
@@ -265,6 +270,20 @@ async def _enqueue_resolve_job(agent_id: uuid.UUID, job: ResolveJob) -> None:
     await r.expire(key, RESOLVE_QUEUE_TTL_SECONDS)
 
 
+SETUP_QUEUE_TTL_SECONDS = 3600
+
+
+def _setup_queue_key(agent_id: uuid.UUID) -> str:
+    return f"agent:{agent_id}:setup-jobs"
+
+
+async def enqueue_setup_job(agent_id: uuid.UUID, job: SetupJob) -> None:
+    r = await get_redis()
+    key = _setup_queue_key(agent_id)
+    await r.rpush(key, job.model_dump_json())
+    await r.expire(key, SETUP_QUEUE_TTL_SECONDS)
+
+
 async def _default_site(org_id: uuid.UUID, db: AsyncSession) -> Site:
     stmt = (
         select(Site)
@@ -387,4 +406,80 @@ async def post_resolve_result(
         camera.status = "offline"
     else:
         camera.status = "error"
+    await db.flush()
+
+
+@router.get("/me/setup-jobs", response_model=SetupJobsResponse)
+async def get_setup_jobs(
+    agent: Agent = Depends(get_agent_from_token),
+) -> SetupJobsResponse:
+    """Drain pending camera-setup jobs for this agent.
+
+    Polled by the PYTHON PIPELINE, not the Go agent: the pipeline is the
+    process that holds decoded frames and can call Gemini. It authenticates
+    with the same device token.
+
+    Jobs are popped. The camera_setup_proposals row — not this queue — is the
+    source of truth, so a lost job leaves a visible `pending` proposal the
+    operator can retry.
+    """
+    r = await get_redis()
+    key = _setup_queue_key(agent.id)
+    jobs: list[SetupJob] = []
+    while True:
+        raw = await r.lpop(key)
+        if raw is None:
+            break
+        jobs.append(SetupJob.model_validate_json(raw))
+    return SetupJobsResponse(jobs=jobs)
+
+
+@router.post("/me/setup-jobs/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def post_setup_result(
+    camera_id: uuid.UUID,
+    payload: SetupResultRequest,
+    agent: Agent = Depends(get_agent_from_token),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Record the pipeline's proposal for one camera.
+
+    Never writes camera config — only the proposal row. Approval is a separate,
+    human action.
+    """
+    stmt = (
+        select(CameraSetupProposal)
+        .join(Camera, Camera.id == CameraSetupProposal.camera_id)
+        .where(
+            CameraSetupProposal.camera_id == camera_id,
+            CameraSetupProposal.status == "pending",
+            Camera.agent_id == agent.id,
+        )
+        .order_by(CameraSetupProposal.created_at.desc())
+        .limit(1)
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no pending proposal")
+
+    if payload.error or not payload.proposal:
+        row.status = "failed"
+        row.error = payload.error or "no proposal returned"
+        await db.flush()
+        return
+
+    reasons = validate_proposal(payload.proposal, payload.frame_width, payload.frame_height)
+    row.proposal = payload.proposal
+    row.scene_type = payload.proposal.get("scene_type")
+    row.scene_description = payload.proposal.get("scene_description")
+    row.confidence = payload.proposal.get("confidence")
+    row.rationale = payload.proposal.get("rationale")
+
+    if reasons:
+        # Never corrected — a corrected proposal is no longer the thing the
+        # model justified in its rationale.
+        row.status = "needs_input"
+        row.error = "; ".join(reasons)
+    else:
+        row.status = "proposed"
+        row.error = None
     await db.flush()
