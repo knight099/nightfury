@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # than applied silently.
 DEGRADED_LOAD_FACTOR = 0.5
 
+# Setup analysis is not urgent; detection is. Bounding concurrency keeps an
+# onboarding run from competing with the pipeline this box exists to run.
+MAX_CONCURRENT_SETUP_JOBS = 2
+SETUP_POLL_INTERVAL = 30
+
 
 def _stream_signature(c: CameraConfig) -> tuple:
     return (c.ingest_mode, c.rtsp_url, c.stream_key, c.idle_fps, c.active_fps)
@@ -92,6 +97,7 @@ class WorkerSupervisor:
         await self.mjpeg_server.start()
 
         reconcile_task = asyncio.create_task(self._reconcile_loop())
+        setup_task = asyncio.create_task(self._setup_loop())
         try:
             while True:
                 await asyncio.sleep(config.health_report_interval)
@@ -101,6 +107,11 @@ class WorkerSupervisor:
             reconcile_task.cancel()
             try:
                 await reconcile_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            setup_task.cancel()
+            try:
+                await setup_task
             except (asyncio.CancelledError, Exception):
                 pass
             await self.mjpeg_server.stop()
@@ -181,6 +192,67 @@ class WorkerSupervisor:
                 f"restarted={len(to_restart)} updated={len(to_update)} "
                 f"(active={len(self.workers)})"
             )
+
+    async def _setup_loop(self):
+        """Poll for camera-setup jobs and answer them."""
+        while True:
+            try:
+                await asyncio.sleep(SETUP_POLL_INTERVAL)
+                jobs = await self.api_client.get_setup_jobs()
+                if not jobs:
+                    continue
+                semaphore = asyncio.Semaphore(MAX_CONCURRENT_SETUP_JOBS)
+
+                async def run(job):
+                    async with semaphore:
+                        await self._run_setup_job(job)
+
+                await asyncio.gather(*(run(j) for j in jobs), return_exceptions=True)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"setup loop error: {e}")
+
+    async def _run_setup_job(self, job: dict):
+        """Observe one camera and post a proposal (or the reason there isn't one)."""
+        import cv2
+        from scene_analyzer import SceneAnalysisError, analyze_scene
+
+        camera_id = job.get("camera_id")
+        name = job.get("camera_name", camera_id)
+        frame_count = int(job.get("frame_count", 10))
+        observe_seconds = int(job.get("observe_seconds", 180))
+
+        worker = self.workers.get(camera_id)
+        if worker is None:
+            await self.api_client.post_setup_result(
+                camera_id, {"error": "this camera is not running on this appliance"}
+            )
+            return
+
+        interval = max(1.0, observe_seconds / max(1, frame_count))
+        frames: list[bytes] = []
+        height, width = 720, 1280
+        for _ in range(frame_count):
+            frame = worker.last_frame
+            if frame is not None:
+                height, width = frame.shape[0], frame.shape[1]
+                ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    frames.append(buf.tobytes())
+            await asyncio.sleep(interval)
+
+        try:
+            proposal = await analyze_scene(self.gemini, frames, name, width, height)
+        except SceneAnalysisError as exc:
+            await self.api_client.post_setup_result(camera_id, {"error": str(exc)})
+            return
+
+        await self.api_client.post_setup_result(
+            camera_id,
+            {"proposal": proposal, "frame_width": width, "frame_height": height},
+        )
+        logger.info(f"[{name}] setup proposal submitted")
 
     async def _start_worker(self, cam_config: CameraConfig):
         """Start a camera worker, subject to admission control.
