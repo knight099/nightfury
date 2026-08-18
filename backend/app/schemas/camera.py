@@ -12,6 +12,7 @@ class CreateCameraRequest(BaseModel):
     enabled_events: list[str] = ["person", "vehicle", "intrusion"]
     detection_zones: list[dict] = []
     step_sequence: list[dict] = []
+    counting_lines: list[dict] = []
     sensitivity: str = "medium"
     idle_fps: float = 1.0
     active_fps: float = 5.0
@@ -24,6 +25,7 @@ class UpdateCameraRequest(BaseModel):
     enabled_events: list[str] | None = None
     detection_zones: list[dict] | None = None
     step_sequence: list[dict] | None = None
+    counting_lines: list[dict] | None = None
     sensitivity: str | None = None
     idle_fps: float | None = None
     active_fps: float | None = None
@@ -39,6 +41,7 @@ class CameraResponse(BaseModel):
     enabled_events: list[str]
     detection_zones: list[dict]
     step_sequence: list[dict]
+    counting_lines: list[dict] = []
     sensitivity: str
     status: str
     last_frame_at: datetime | None

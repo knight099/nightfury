@@ -15,6 +15,8 @@ class CameraConfig:
     enabled_events: list[str] = field(default_factory=lambda: ["person", "vehicle", "intrusion"])
     detection_zones: list[dict] = field(default_factory=list)
     step_sequence: list[dict] = field(default_factory=list)
+    # Operator-drawn line segments for footfall counting.
+    counting_lines: list[dict] = field(default_factory=list)
     sensitivity: str = "medium"
     timezone: str = "Asia/Kolkata"
     idle_fps: float = 1.0
@@ -34,6 +36,7 @@ class CameraConfig:
             enabled_events=a.get("enabled_events", ["person", "vehicle", "intrusion"]),
             detection_zones=a.get("detection_zones", []),
             step_sequence=a.get("step_sequence", []),
+            counting_lines=a.get("counting_lines", []),
             sensitivity=a.get("sensitivity", "medium"),
             timezone=a.get("timezone", "UTC"),
             idle_fps=float(a.get("idle_fps", 1.0)),
