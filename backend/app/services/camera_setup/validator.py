@@ -58,6 +58,11 @@ def validate_proposal(proposal: dict, frame_width: int, frame_height: int) -> li
         reasons.append("sensitivity must be low, medium or high")
 
     for zone in proposal.get("zones") or []:
+        # Guard: zone must be a dict
+        if not isinstance(zone, dict):
+            reasons.append("a zone entry is not an object")
+            continue
+
         name = zone.get("name")
         polygon = zone.get("polygon")
         if not name:
@@ -66,21 +71,42 @@ def validate_proposal(proposal: dict, frame_width: int, frame_height: int) -> li
             reasons.append(f"zone {name!r} needs at least 3 points")
             continue
         for point in polygon:
-            if (
-                not isinstance(point, (list, tuple))
-                or len(point) != 2
-                or not (0 <= point[0] <= frame_width)
-                or not (0 <= point[1] <= frame_height)
-            ):
+            try:
+                if (
+                    not isinstance(point, (list, tuple))
+                    or len(point) != 2
+                    or not isinstance(point[0], (int, float))
+                    or not isinstance(point[1], (int, float))
+                    or not (0 <= point[0] <= frame_width)
+                    or not (0 <= point[1] <= frame_height)
+                ):
+                    reasons.append(f"zone {name!r} has a point outside the frame")
+                    break
+            except (TypeError, IndexError, KeyError):
                 reasons.append(f"zone {name!r} has a point outside the frame")
                 break
 
     for line in proposal.get("counting_lines") or []:
+        # Guard: line must be a dict
+        if not isinstance(line, dict):
+            reasons.append("a counting line entry is not an object")
+            continue
+
         name = line.get("name")
         if not name:
             reasons.append("a counting line has no name")
         try:
-            x1, y1, x2, y2 = int(line["x1"]), int(line["y1"]), int(line["x2"]), int(line["y2"])
+            x1_val = line.get("x1")
+            y1_val = line.get("y1")
+            x2_val = line.get("x2")
+            y2_val = line.get("y2")
+
+            # Check that all are present and numeric
+            if any(v is None for v in [x1_val, y1_val, x2_val, y2_val]):
+                reasons.append(f"counting line {name!r} is missing coordinates")
+                continue
+
+            x1, y1, x2, y2 = int(x1_val), int(y1_val), int(x2_val), int(y2_val)
         except (KeyError, TypeError, ValueError):
             reasons.append(f"counting line {name!r} is missing coordinates")
             continue
