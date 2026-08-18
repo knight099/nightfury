@@ -47,11 +47,12 @@ async def create_site(
 ):
     require_role(user, "admin")
 
-    target_org_id = user.org_id
-    if user.role == "super_admin" and org_id:
-        target_org_id = org_id
-    elif user.role == "super_admin" and not org_id:
-        raise HTTPException(status_code=400, detail="Super admin must specify org_id")
+    # A super admin may create a site in any org by passing ?org_id=. Without
+    # one it falls back to their own org — they have a real org now, so
+    # "create a site to test with" no longer requires hand-passing an id.
+    target_org_id = org_id if (user.role == "super_admin" and org_id) else user.org_id
+    if target_org_id is None:
+        raise HTTPException(status_code=400, detail="No organization associated")
 
     site = Site(org_id=target_org_id, name=body.name, address=body.address, timezone=body.timezone)
     db.add(site)

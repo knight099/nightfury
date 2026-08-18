@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     turn_credential_ttl_seconds: int = 600
 
     super_admin_username: str = "super_nightvision"
+    # The super admin belongs to a real organisation of its own, so that
+    # "my org" surfaces (settings, sites, cameras, digests) work for them and
+    # they have somewhere to put their own test hardware. Cross-org visibility
+    # is unaffected: every bypass keys off role == "super_admin", never off
+    # org_id being null.
+    super_admin_org_name: str = "Nightwatch HQ"
     super_admin_password: str = ""
 
     access_token_expire_minutes: int = 1440  # 24 hours

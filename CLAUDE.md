@@ -252,7 +252,7 @@ GitHub Actions workflow at `.github/workflows/deploy.yml` handles:
 - FastAPI + SQLAlchemy 2.0 async + PostgreSQL + Redis
 - Auth: username/password, Argon2id hashing, AES-256-GCM encrypted Redis sessions, brute-force lockout, session binding (IP+UA), idle/absolute expiry
 - Multi-tenant isolation on every query: `org_id` filter **plus** `scope_to_sites(...)` for per-site restriction (`users.sites_access`). Both halves are required — see Cross-Service Rules
-- Super admin: bypasses org filters, CRUD all orgs/users, change passwords, force-logout, view sessions
+- Super admin: bypasses org filters by role, CRUD all orgs/users, change passwords, force-logout, view sessions, and **impersonate** any non-super-admin user ("Login as" in `/admin`). Has its own org (`nightwatch-hq`) for its own cameras and testing
 - Alert engine with per-site scoping and an escalation ladder (unacknowledged events climb to the next rung)
 - WebSocket: per-org real-time event broadcast, filtered per subscriber by site scope
 - Internal edge endpoints: event ingestion, batched heartbeat, agent-scoped camera assignments, setup jobs
@@ -369,7 +369,8 @@ Vision/
 - The agent's pipeline sidecar (`agent/pipeline/`) reuses the same device token for its own backend calls (events, GCS upload URLs, Gemini token broker) — no separate secret
 - Backend brokers short-lived (≤30min) Vertex AI tokens to device-token-authenticated edge boxes instead of shipping a static Gemini key to customer hardware (`POST /api/edge/gemini-token`)
 - Relay (cloud-VM fallback path only) rejects any stream tagged with a `camera_id` that doesn't belong to the agent's `org_id`
-- super_admin role has `org_id = null` and sees all data across all orgs
+- super_admin belongs to its own organisation (`nightwatch-hq`, seeded on boot) so the "my org" surfaces — settings, sites, team, cameras, digests — work for them and they have somewhere to keep their own test hardware. It still sees all data across all orgs: **every org-filter bypass keys off `role == "super_admin"`, never off `org_id` being null.** Do not reintroduce `org_id is None` as a super-admin test
+- Endpoints that let a super admin act on another org (`POST /api/sites?org_id=`, pair codes, device claim) still accept an explicit `org_id`; omitting it now falls back to the super admin's own org rather than returning 400
 
 ### API Contract
 - Backend runs on port 8080

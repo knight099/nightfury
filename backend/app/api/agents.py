@@ -66,13 +66,10 @@ async def create_pair_code(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PairCodeResponse:
-    if user.role == "super_admin":
-        # super_admin has no org of their own; they must pass org_id in the body
-        if payload.org_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="super_admin must pass org_id in the request body",
-            )
+    if user.role == "super_admin" and payload.org_id is not None:
+        # A super admin may pair a box into any org by naming it explicitly.
+        # Without org_id they fall through to their own org below — they have
+        # one now, so pairing their own test hardware needs no org id.
         org = (
             await db.execute(
                 select(Organization).where(

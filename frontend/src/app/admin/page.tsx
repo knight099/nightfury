@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import type { User } from "@/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 
@@ -85,6 +87,9 @@ export default function AdminPage() {
 }
 
 function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org[]; loading: boolean; onMutate: () => void }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const startImpersonation = useAuthStore((s) => s.startImpersonation);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openSessionsId, setOpenSessionsId] = useState<string | null>(null);
@@ -100,6 +105,18 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
   const restoreMutation = useMutation({
     mutationFn: (id: string) => api.adminRestoreUser(id),
     onSuccess: onMutate,
+  });
+
+  const impersonateMutation = useMutation({
+    mutationFn: (id: string) => api.adminImpersonateUser(id),
+    onSuccess: ({ token, user: target }) => {
+      // Swap identity, then drop every cached query — anything already
+      // fetched belongs to the super admin and would leak across the switch.
+      startImpersonation(token, target);
+      api.setToken(token);
+      queryClient.clear();
+      router.push("/dashboard");
+    },
   });
 
   const forceLogoutMutation = useMutation({
@@ -277,6 +294,19 @@ function UsersTab({ users, orgs, loading, onMutate }: { users: User[]; orgs: Org
                         <button onClick={() => forceLogoutMutation.mutate(u.id)} className="text-xs px-2 py-1 text-[#A3A3A3] hover:text-[#FBBF24] transition-colors">
                           Kick
                         </button>
+                        {u.role !== "super_admin" && !u.deleted_at && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Log in as @${u.username}? You will see exactly what they see until you exit.`)) {
+                                impersonateMutation.mutate(u.id);
+                              }
+                            }}
+                            disabled={impersonateMutation.isPending}
+                            className="text-xs px-2 py-1 text-[#1E90FF] hover:text-[#3BA0FF] transition-colors disabled:opacity-40"
+                          >
+                            Login as
+                          </button>
+                        )}
                         {u.role !== "super_admin" && (
                           <button
                             onClick={() => { if (confirm(`Delete @${u.username}?`)) deleteMutation.mutate(u.id); }}
