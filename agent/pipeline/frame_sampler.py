@@ -19,6 +19,11 @@ class FrameSampler:
     def __init__(self, idle_fps: float | None = None, active_fps: float | None = None):
         self.idle_fps = idle_fps or config.idle_fps
         self.active_fps = active_fps or config.active_fps
+        # Runtime sampling multiplier, 0 < factor <= 1, set by the supervisor
+        # when the box is over capacity. Scaling here rather than editing
+        # idle_fps/active_fps keeps the stream signature unchanged, so
+        # degrading load does not restart every stream on the box.
+        self.load_factor: float = 1.0
         self.state = self.STATE_IDLE
         self.last_sample_time: float = 0
         self.last_motion_time: float = 0
@@ -34,9 +39,9 @@ class FrameSampler:
         elif now - self.last_motion_time > config.no_motion_timeout:
             self.state = self.STATE_IDLE
 
-        target_interval = 1.0 / (
-            self.active_fps if self.state == self.STATE_ACTIVE else self.idle_fps
-        )
+        base_fps = self.active_fps if self.state == self.STATE_ACTIVE else self.idle_fps
+        effective_fps = max(0.05, base_fps * self.load_factor)
+        target_interval = 1.0 / effective_fps
 
         if now - self.last_sample_time < target_interval:
             return False

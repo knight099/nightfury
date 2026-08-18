@@ -25,4 +25,8 @@ async def get_sequence_compiler_spend_tracker(redis=Depends(_redis_dep)) -> Spen
     # Deliberately shares the digest spend cap/key namespace (digest:spend:{org_id}:{day},
     # digest_daily_spend_cap_usd) rather than a separate budget — an explicit product
     # decision, not an oversight (see the design doc's spend-cap tradeoff section).
-    return SpendTracker(redis_client=redis, daily_cap_usd=settings.digest_daily_spend_cap_usd)
+    return SpendTracker(
+        redis_client=redis,
+        daily_cap_usd=settings.digest_daily_spend_cap_usd,
+        site_daily_cap_usd=settings.digest_site_daily_spend_cap_usd or None,
+    )

@@ -6,16 +6,25 @@ import { api } from "@/lib/api";
 interface Props {
   cameraId: string;
   className?: string;
-  onError: () => void;
+  /**
+   * Called when live view cannot be established. `reason` carries the
+   * server's message where one is available — the video wall needs to tell
+   * "this appliance is at its viewer limit" apart from "this camera is
+   * broken", because only one of those is the user's problem to fix.
+   */
+  onError: (reason?: string) => void;
 }
 
 export function WebRTCPlayer({ cameraId, className, onError }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
-  const handleError = useCallback(() => {
-    onError();
-  }, [onError]);
+  const handleError = useCallback(
+    (reason?: string) => {
+      onError(reason);
+    },
+    [onError]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -67,8 +76,10 @@ export function WebRTCPlayer({ cameraId, className, onError }: Props) {
         }
 
         await pc.setRemoteDescription({ type: "answer", sdp: result.answer });
-      } catch {
-        if (!cancelled) handleError();
+      } catch (err) {
+        if (!cancelled) {
+          handleError(err instanceof Error ? err.message : undefined);
+        }
       }
     }
 

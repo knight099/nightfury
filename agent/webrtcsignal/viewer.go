@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -17,19 +18,70 @@ import (
 	"github.com/nightwatch/agent/internal/republish"
 )
 
-// ViewerServer handles browser-facing WebRTC signaling.
-// POST /view {camera_id, view_token, offer} → {answer}
+// DefaultMaxSessions bounds how many browsers this box will serve video to
+// at once.
 //
-// Frames are pulled from the shared Registry (same H.264 Annex-B ring
-// populated by the gRPC / agent-WebRTC paths) and sent to the browser
-// as a standard H.264 video track.
+// A video wall is a genuinely different load profile from one operator
+// opening one camera: each session runs its own PeerConnection, encoder
+// pacing loop and outbound stream. Left uncapped, a control room opening a
+// 16-tile wall can starve the detection pipeline this box exists to run —
+// live view is a convenience, detection is the product.
+//
+// The cap MUST live here rather than only in the UI: the browser is not a
+// trustworthy place to enforce a resource limit on someone else's hardware.
+const DefaultMaxSessions = 6
+
+// ViewerServer handles browser-facing WebRTC signaling.
 type ViewerServer struct {
 	secret   string // STREAM_TOKEN_SECRET shared with backend
 	registry *republish.Registry
+
+	maxSessions int
+	mu          sync.Mutex
+	active      int
 }
 
 func NewViewerServer(secret string, reg *republish.Registry) *ViewerServer {
-	return &ViewerServer{secret: secret, registry: reg}
+	return &ViewerServer{secret: secret, registry: reg, maxSessions: DefaultMaxSessions}
+}
+
+// SetMaxSessions overrides the concurrent-session cap. A value <= 0 restores
+// the default rather than disabling the limit — "unlimited" is not a state
+// this box can safely be in.
+func (s *ViewerServer) SetMaxSessions(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n <= 0 {
+		n = DefaultMaxSessions
+	}
+	s.maxSessions = n
+}
+
+// acquireSession reserves a slot, or reports that the box is full.
+func (s *ViewerServer) acquireSession() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active >= s.maxSessions {
+		return false
+	}
+	s.active++
+	return true
+}
+
+// releaseSession frees a slot. Safe to call once per successful acquire.
+func (s *ViewerServer) releaseSession() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active > 0 {
+		s.active--
+	}
+}
+
+// ActiveSessions reports current live-view load, for heartbeat/telemetry.
+func (s *ViewerServer) ActiveSessions() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active
 }
 
 type viewRequest struct {
@@ -93,6 +145,11 @@ func (s *ViewerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Server misconfiguration, not a caller problem — but we still
 			// refuse to serve the stream (fail closed).
 			http.Error(w, "view token secret not configured", http.StatusServiceUnavailable)
+		case errors.Is(err, ErrTooManySessions):
+			// 503 + Retry-After: this is a capacity condition, not a client
+			// mistake, and it clears on its own when a viewer disconnects.
+			w.Header().Set("Retry-After", "5")
+			http.Error(w, "too many live viewers on this appliance", http.StatusServiceUnavailable)
 		case errors.Is(err, ErrCameraNotFound):
 			http.Error(w, "camera not on relay", http.StatusNotFound)
 		case errors.Is(err, ErrBadOffer):
@@ -128,8 +185,15 @@ func (s *ViewerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // only the most recent frame, discarding accumulated backlog. This prevents
 // the burst-then-stall pattern that occurs when the ring fills faster than
 // the viewer consumes it.
-func viewerPump(pc *webrtc.PeerConnection, track *webrtc.TrackLocalStaticSample, pub *republish.Publisher) {
+func viewerPump(pc *webrtc.PeerConnection, track *webrtc.TrackLocalStaticSample, pub *republish.Publisher, release func()) {
 	defer pc.Close()
+	// The slot is held for the life of the stream, not just the negotiation,
+	// and is released however the pump exits — normal close, failure, or
+	// disconnect. Releasing at the end of HandleOffer would make the cap
+	// meaningless, since every session would free its slot immediately.
+	if release != nil {
+		defer release()
+	}
 
 	const fps = 25
 	frameDur := time.Second / fps

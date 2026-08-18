@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_agent_from_token, get_current_user
+from app.core.dependencies import get_agent_from_token, get_current_user, scope_to_sites
 from app.core.redis import get_redis
 from app.models.agent import Agent
 from app.models.camera import Camera
@@ -146,7 +146,9 @@ async def list_agents(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AgentListResponse:
-    stmt = select(Agent).order_by(Agent.created_at.desc())
+    stmt = scope_to_sites(
+        select(Agent).order_by(Agent.created_at.desc()), Agent.site_id, user
+    )
     if user.role != "super_admin":
         stmt = stmt.where(Agent.org_id == user.org_id)
     result = await db.execute(stmt)
@@ -162,6 +164,9 @@ async def _load_agent_for_user(
     stmt = select(Agent).where(Agent.id == agent_id)
     if user.role != "super_admin":
         stmt = stmt.where(Agent.org_id == user.org_id)
+    # Agents carry a site_id, so an appliance in a building the caller has no
+    # access to is out of scope the same way its cameras are.
+    stmt = scope_to_sites(stmt, Agent.site_id, user)
     agent = (await db.execute(stmt)).scalar_one_or_none()
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="agent not found")

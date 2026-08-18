@@ -61,7 +61,11 @@ async def get_digest_service(
     redis=Depends(_redis_dep),
 ) -> DigestService:
     gemini = GeminiDigestClient(genai_client=_gemini_client())
-    spend = SpendTracker(redis_client=redis, daily_cap_usd=settings.digest_daily_spend_cap_usd)
+    spend = SpendTracker(
+        redis_client=redis,
+        daily_cap_usd=settings.digest_daily_spend_cap_usd,
+        site_daily_cap_usd=settings.digest_site_daily_spend_cap_usd or None,
+    )
     return DigestService(
         db=db,
         gemini=gemini,

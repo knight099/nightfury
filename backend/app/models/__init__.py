@@ -3,6 +3,8 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.models.site import Site
 from app.models.camera import Camera
+from app.models.camera_connection import CameraConnection
+from app.models.footfall_count import FootfallCount
 from app.models.event import Event
 from app.models.alert_rule import AlertRule
 from app.models.alert_history import AlertHistory
@@ -21,6 +23,7 @@ __all__ = [
     "User",
     "Site",
     "Camera",
+    "CameraConnection",
     "Event",
     "AlertRule",
     "AlertHistory",

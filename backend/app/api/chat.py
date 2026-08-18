@@ -7,16 +7,21 @@ request body; otherwise their conversations have ``org_id = NULL``.
 
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, permitted_site_ids, scope_to_sites
+from app.services.digest.compactor import compact_events
+from app.services.digest.sampler import sample_evenly
 from app.core.redis import get_redis
 from app.models.camera import Camera
+from app.models.site import Site
 from app.models.chat_message import ChatMessage
 from app.models.event import Event
 from app.models.user import User
@@ -59,6 +64,7 @@ async def _get_spend_tracker(redis=Depends(_redis_dep)) -> SpendTracker:
     return SpendTracker(
         redis_client=redis,
         daily_cap_usd=settings.digest_daily_spend_cap_usd,
+        site_daily_cap_usd=settings.digest_site_daily_spend_cap_usd or None,
     )
 
 
@@ -84,6 +90,7 @@ async def _validate_camera(
         stmt = stmt.where(Camera.org_id == scope_org_id)
     elif scope_org_id is not None:
         stmt = stmt.where(Camera.org_id == scope_org_id)
+    stmt = scope_to_sites(stmt, Camera.site_id, current)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Camera not found")
@@ -98,6 +105,7 @@ async def _validate_event(
         stmt = stmt.where(Event.org_id == scope_org_id)
     elif scope_org_id is not None:
         stmt = stmt.where(Event.org_id == scope_org_id)
+    stmt = scope_to_sites(stmt, Event.site_id, current)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -128,6 +136,90 @@ def _build_event_context(event: Event, camera_name: str | None) -> str:
         f"- confidence: {event.confidence:.2f}\n"
         f"- description: {event.description}\n"
         f"- camera: {camera_name or 'unknown'}"
+    )
+
+
+# Site-wide Ask ---------------------------------------------------------------
+
+# Bounds what one question can pull into the prompt. The digest subsystem uses
+# the same cap for the same reason: past a couple of hundred events the model
+# gains nothing and the call gets expensive.
+SITE_ASK_EVENT_CAP = 200
+# Default lookback when the caller names a site but no window. A shift, near
+# enough — long enough to cover "last night", short enough to stay answerable.
+SITE_ASK_DEFAULT_HOURS = 12
+
+
+async def _build_site_context(
+    db: AsyncSession,
+    site: Site,
+    start: datetime | None,
+    end: datetime | None,
+) -> str:
+    """Retrieve the site's events in a window and compact them for the prompt.
+
+    This is the retrieval half of retrieve-then-generate. Without it the model
+    answers "what happened near the food court last night?" from nothing but
+    its own prior — which is to say, it invents an answer. Grounding it in the
+    actual rows is the whole feature.
+    """
+    end = end or datetime.now(timezone.utc)
+    start = start or (end - timedelta(hours=SITE_ASK_DEFAULT_HOURS))
+
+    stmt = (
+        select(Event)
+        .options(selectinload(Event.camera))
+        .where(
+            Event.site_id == site.id,
+            Event.timestamp >= start,
+            Event.timestamp <= end,
+        )
+        .order_by(Event.timestamp)
+    )
+    rows = list((await db.execute(stmt)).scalars().all())
+
+    window = f"{start.isoformat()} to {end.isoformat()}"
+    if not rows:
+        # Say so explicitly. An empty context block invites the model to fill
+        # the silence; "there were none" is an answer it can repeat safely.
+        return (
+            f"Site context for '{site.name}':\n"
+            f"- window: {window}\n"
+            f"- events: NONE. Nothing was detected at this site in this window."
+        )
+
+    total = len(rows)
+    sampled = sample_evenly(rows, cap=SITE_ASK_EVENT_CAP)
+    compact = compact_events(
+        [
+            {
+                "timestamp": e.timestamp,
+                "camera_name": e.camera.name if e.camera else None,
+                "event_type": e.event_type,
+                "severity": e.severity,
+                "description": e.description,
+            }
+            for e in sampled
+        ]
+    )
+    lines = [
+        f"- {c.time} | {c.camera_name} | {c.event_type} | {c.severity} | {c.description}"
+        for c in compact
+    ]
+    note = (
+        ""
+        if total <= SITE_ASK_EVENT_CAP
+        # The model must know it is looking at a sample, or it will answer
+        # counting questions ("how many people?") from the truncated list as
+        # though it were the whole set.
+        else f"\n- NOTE: sampled {len(compact)} of {total} events evenly across the window; "
+        "counts below are not exhaustive."
+    )
+    return (
+        f"Site context for '{site.name}':\n"
+        f"- window: {window}\n"
+        f"- total_events: {total}{note}\n"
+        f"- events:\n" + "\n".join(lines)
     )
 
 
@@ -163,6 +255,18 @@ async def post_message(
 
     camera_obj: Camera | None = None
     event_obj: Event | None = None
+    site_obj = None
+    if body.site_id is not None:
+        site_stmt = select(Site).where(
+            Site.id == body.site_id, Site.deleted_at.is_(None)
+        )
+        if scope_org_id is not None:
+            site_stmt = site_stmt.where(Site.org_id == scope_org_id)
+        site_stmt = scope_to_sites(site_stmt, Site.id, current)
+        site_obj = (await db.execute(site_stmt)).scalar_one_or_none()
+        if site_obj is None:
+            raise HTTPException(status_code=404, detail="Site not found")
+
     if body.camera_id is not None:
         camera_obj = await _validate_camera(db, body.camera_id, scope_org_id, current)
     if body.event_id is not None:
@@ -215,10 +319,28 @@ async def post_message(
         context_blocks.append(_build_event_context(event_obj, cam_name))
     if camera_obj is not None:
         context_blocks.append(await _build_camera_context(db, camera_obj))
+    if site_obj is not None:
+        context_blocks.append(
+            await _build_site_context(db, site_obj, body.start, body.end)
+        )
 
     # Spend cap (only meaningful when scoped to an org)
     if scope_org_id is not None:
-        allowed = await spend.try_charge(scope_org_id, APPROX_COST_PER_CHAT_USD)
+        # camera_obj carries the site when the chat is camera-scoped; a
+        # site-less chat still charges the org cap alone.
+        allowed = await spend.try_charge(
+            scope_org_id,
+            APPROX_COST_PER_CHAT_USD,
+            # A site-wide Ask is charged to that site; a camera-scoped one to
+            # the camera's site. Site-wide questions are the expensive kind
+            # (they pull a window of events into the prompt), so they must
+            # come out of that site's budget rather than the org's alone.
+            site_id=(
+                site_obj.id
+                if site_obj is not None
+                else camera_obj.site_id if camera_obj is not None else None
+            ),
+        )
         if not allowed:
             raise HTTPException(status_code=429, detail="daily AI quota reached")
 

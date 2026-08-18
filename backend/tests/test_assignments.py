@@ -110,7 +110,13 @@ async def test_assignments_empty_list(client, db_session, test_org):
         headers={"X-Worker-Key": settings.worker_api_key},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"assignments": []}
+    body = resp.json()
+    assert body["assignments"] == []
+    # The X-Worker-Key (cloud-VM fallback) principal has no agent row, so
+    # there is no per-agent assignment version to report. Asserting on the
+    # field rather than on whole-dict equality keeps this test from breaking
+    # every time the response gains one.
+    assert body["assignment_version"] is None
 
 
 @pytest.mark.asyncio

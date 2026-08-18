@@ -144,3 +144,54 @@ def require_role(user: User, minimum_role: str):
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Requires {minimum_role} role or above",
         )
+
+
+# ─── Site scoping ───────────────────────────────────────────────────────────
+# `users.sites_access` has existed since the initial schema but was written and
+# never read: every query filtered on `org_id` alone. On a single-site customer
+# that was invisible; on a multi-site one it means a floor manager scoped to
+# one building sees every camera and every event across the whole estate.
+#
+# The empty list deliberately means "unrestricted", not "nothing". Nothing has
+# ever written a non-empty value, so treating empty as deny-all would lock out
+# every existing account the moment enforcement was switched on. Restriction is
+# opt-in per user; absence of a restriction is the status quo.
+
+
+def permitted_site_ids(user: User) -> list[uuid.UUID] | None:
+    """Sites this user may see, or ``None`` for unrestricted.
+
+    ``None`` and ``[]`` are NOT interchangeable here — ``None`` is "apply no
+    filter", while an empty list returned to a caller would mean "match
+    nothing". Callers must check for ``None`` explicitly.
+    """
+    if user.role == "super_admin":
+        return None
+    if not user.sites_access:
+        return None
+    return list(user.sites_access)
+
+
+def scope_to_sites(query, site_column, user: User):
+    """Apply the caller's site restriction to ``query``, if they have one.
+
+    ``site_column`` is whichever model's ``site_id`` the query selects from
+    (``Event.site_id``, ``Camera.site_id``, ``Site.id``, …), so one helper
+    covers every table that carries site ownership.
+    """
+    site_ids = permitted_site_ids(user)
+    if site_ids is None:
+        return query
+    return query.where(site_column.in_(site_ids))
+
+
+def user_may_access_site(user: User, site_id: uuid.UUID | None) -> bool:
+    """Whether a single site is within the caller's scope.
+
+    For the paths that hold one object rather than building a query — the
+    WebSocket fan-out, and any per-row check after a fetch.
+    """
+    site_ids = permitted_site_ids(user)
+    if site_ids is None:
+        return True
+    return site_id in site_ids

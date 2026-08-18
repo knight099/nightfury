@@ -61,6 +61,11 @@ class AlertService:
         return triggered_count
 
     def _matches(self, rule: AlertRule, event: Event) -> bool:
+        # NULL site_id means "all sites" — the pre-multi-site behaviour every
+        # existing rule relies on.
+        if rule.site_id is not None and event.site_id != rule.site_id:
+            return False
+
         if rule.event_types and event.event_type not in rule.event_types:
             return False
 

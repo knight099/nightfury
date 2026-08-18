@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nightwatch-design-system-bee50759-d680-4202-b762-0690851a27ee/styles.css">
+<script src="./image-slot.js"></script>
+<style>
+  body { margin:0; background: oklch(9% 0.015 265); }
+  a { color: oklch(82.8% 0.189 84.429); text-decoration: none; }
+  a:hover { color: oklch(76.9% 0.188 70.08); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(26% 0.02 265); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes nwPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+</style>
+</helmet>
+
+<sc-if value="{{ isAppMode }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;height:100vh;width:100%;background:oklch(9% 0.015 265);color:oklch(97% 0.005 265);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;">
+
+  <div style="width:232px;flex-shrink:0;background:oklch(12% 0.015 265);border-right:1px solid oklch(22% 0.015 265);display:flex;flex-direction:column;padding:24px 16px;">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 28px 8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:oklch(79.2% 0.209 151.711);box-shadow:0 0 0 4px oklch(79.2% 0.209 151.711 / 0.15);"></div>
+      <div style="font-size:17px;font-weight:700;letter-spacing:-0.01em;">Nightwatch</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <div onClick="{{ goHome }}" style="{{ navItemStyle.home }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        <span>Home</span>
+      </div>
+      <div onClick="{{ goCameras }}" style="{{ navItemStyle.cameras }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>
+        <span>Cameras</span>
+      </div>
+      <div onClick="{{ goMap }}" style="{{ navItemStyle.map }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 8.6L10 16M15.8 8.6L14 16"/></svg>
+        <span>Map</span>
+      </div>
+      <div onClick="{{ goAgents }}" style="{{ navItemStyle.agents }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="10" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.2" fill="currentColor" stroke="none"/><path d="M8 15h8"/></svg>
+        <span>Agents</span>
+      </div>
+      <div onClick="{{ goActivity }}" style="{{ navItemStyle.activity }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        <span>Activity</span>
+      </div>
+      <div onClick="{{ goDigests }}" style="{{ navItemStyle.digests }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+        <span>Digests</span>
+      </div>
+      <div onClick="{{ goSettings }}" style="{{ navItemStyle.settings }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009.09 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9.09a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>Settings</span>
+      </div>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    <div style="background:oklch(15% 0.02 265);border:1px solid oklch(24% 0.02 265);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:6px;height:6px;border-radius:50%;background:oklch(79.2% 0.209 151.711);animation:nwPulse 2s ease-in-out infinite;"></div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.04em;color:oklch(72% 0.01 265);text-transform:uppercase;">On watch</div>
+      </div>
+      <div style="font-size:13px;color:oklch(85% 0.005 265);line-height:1.5;">{{ camerasWatchingCount }} of {{ camerasTotalCount }} cameras working right now.</div>
+    </div>
+    <div onClick="{{ enterAdmin }}" style="margin-top:14px;text-align:center;font-size:11.5px;color:oklch(42% 0.01 265);cursor:pointer;">Super Admin login &rarr;</div>
+  </div>
+
+  <div style="flex:1;overflow-y:auto;min-width:0;">
+
+    <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div style="max-width:1040px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;letter-spacing:-0.01em;margin-bottom:6px;">Good afternoon, Sam</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:32px;">Here's how things look right now.</div>
+
+        <div style="background:linear-gradient(135deg, oklch(18% 0.03 155), oklch(13% 0.02 265));border:1px solid oklch(30% 0.06 155);border-radius:20px;padding:28px 32px;display:flex;align-items:center;justify-content:space-between;margin-bottom:36px;">
+          <div style="display:flex;align-items:center;gap:18px;">
+            <div style="width:48px;height:48px;border-radius:50%;background:oklch(79.2% 0.209 151.711 / 0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <div style="width:14px;height:14px;border-radius:50%;background:oklch(79.2% 0.209 151.711);"></div>
+            </div>
+            <div>
+              <div style="font-size:20px;font-weight:700;margin-bottom:4px;">All quiet</div>
+              <div style="font-size:14px;color:oklch(75% 0.01 265);">Nightwatch checked in {{ totalChecksToday }} times today. Nothing needed you.</div>
+            </div>
+          </div>
+          <div onClick="{{ goChat }}" style="font-size:13px;font-weight:600;color:oklch(85% 0.06 155);cursor:pointer;white-space:nowrap;">Ask Nightwatch &rarr;</div>
+        </div>
+
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;">
+          <div style="font-size:16px;font-weight:700;">Your cameras</div>
+          <div onClick="{{ goCameras }}" style="font-size:13px;font-weight:600;color:oklch(72% 0.01 265);cursor:pointer;">See all &rarr;</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:40px;">
+          <sc-for list="{{ cameras }}" as="cam" hint-placeholder-count="4">
+            <div onClick="{{ cam.select }}" style="background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;cursor:pointer;">
+              <div style="height:100px;position:relative;">
+                <image-slot id="{{ cam.slotId }}" shape="rect" placeholder="{{ cam.name }} feed"></image-slot>
+                <div style="{{ cam.dotStyle }}"></div>
+              </div>
+              <div style="padding:12px 14px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:2px;">{{ cam.name }}</div>
+                <div style="font-size:11px;color:oklch(58% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ cam.lastEventShort }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;">
+          <div style="font-size:16px;font-weight:700;">Recent activity</div>
+          <div onClick="{{ goActivity }}" style="font-size:13px;font-weight:600;color:oklch(72% 0.01 265);cursor:pointer;">See all &rarr;</div>
+        </div>
+        <div style="display:flex;flex-direction:column;border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;margin-bottom:36px;">
+          <sc-for list="{{ recentEvents }}" as="ev" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid oklch(19% 0.015 265);background:oklch(12% 0.015 265);">
+              <div style="{{ ev.pillStyle }}">{{ ev.severityLabel }}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;color:oklch(90% 0.005 265);">{{ ev.text }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);margin-top:2px;">{{ ev.camera }} &middot; {{ ev.time }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div onClick="{{ goCameras }}" style="border:1px dashed oklch(30% 0.02 265);border-radius:16px;padding:22px 26px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+          <div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Give a camera a new job</div>
+            <div style="font-size:13px;color:oklch(62% 0.01 265);">Pick a camera and tell it what to watch for, in plain English.</div>
+          </div>
+          <div style="font-size:22px;color:oklch(72% 0.01 265);">+</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCameras }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1040px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+          <div style="font-size:28px;font-weight:700;letter-spacing:-0.01em;">Cameras</div>
+          <div style="font-size:13px;color:oklch(58% 0.01 265);">Click a camera to give it a job.</div>
+        </div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:28px;">Every camera below is on watch. Click one to see what it's up to.</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+          <sc-for list="{{ cameras }}" as="cam" hint-placeholder-count="4">
+            <div onClick="{{ cam.select }}" style="background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:16px;overflow:hidden;cursor:pointer;">
+              <div style="height:170px;position:relative;">
+                <image-slot id="{{ cam.slotId }}" shape="rect" placeholder="{{ cam.name }} feed"></image-slot>
+                <div style="{{ cam.dotStyle }}"></div>
+              </div>
+              <div style="padding:16px 18px;">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+                  <div style="font-size:15px;font-weight:700;">{{ cam.name }}</div>
+                  <div style="font-size:11px;color:oklch(55% 0.01 265);">{{ cam.location }}</div>
+                </div>
+                <div style="font-size:12px;color:oklch(58% 0.01 265);margin-bottom:10px;">{{ cam.lastEventShort }}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  <sc-for list="{{ cam.jobs }}" as="job" hint-placeholder-count="2">
+                    <div style="font-size:11px;padding:4px 10px;border-radius:999px;background:oklch(20% 0.015 265);color:oklch(78% 0.01 265);">{{ job.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCameraDetail }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1200px;margin:0 auto;padding:44px 48px 80px;">
+        <div onClick="{{ goCameras }}" style="font-size:13px;color:oklch(62% 0.01 265);cursor:pointer;margin-bottom:16px;">&larr; All cameras</div>
+        <div style="font-size:30px;font-weight:700;letter-spacing:-0.02em;margin-bottom:6px;">Give {{ selectedCamera.name }} a job</div>
+        <div style="font-size:13.5px;color:oklch(58% 0.01 265);margin-bottom:24px;">Watch it live, then tell it what to look for.</div>
+
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;margin-bottom:22px;">
+          <div style="background:oklch(12% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:18px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid oklch(20% 0.015 265);">
+              <div style="font-size:13px;font-weight:600;color:oklch(85% 0.005 265);">{{ selectedCamera.name }} &middot; {{ selectedCamera.location }}</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="width:6px;height:6px;border-radius:50%;background:oklch(70.4% 0.191 22.216);animation:nwPulse 1.4s ease-in-out infinite;"></div>
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:oklch(65% 0.01 265);">LIVE</div>
+              </div>
+            </div>
+            <div style="height:380px;position:relative;">
+              <image-slot id="{{ selectedCamera.slotId }}" shape="rect" placeholder="{{ selectedCamera.name }} live feed"></image-slot>
+              <div style="{{ selectedCamera.dotStyle }}"></div>
+            </div>
+          </div>
+
+          <div style="background:oklch(12% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:18px;padding:22px;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+              <div style="font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:oklch(55% 0.01 265);">automation.job</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div style="width:6px;height:6px;border-radius:50%;background:oklch(79.2% 0.209 151.711);"></div>
+                <div style="font-size:11px;color:oklch(60% 0.01 265);">agent live</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:17px;font-weight:600;line-height:1.6;margin-bottom:16px;">
+              <span style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid oklch(30% 0.02 265);color:oklch(70% 0.01 265);">IF</span>
+              <input value="{{ builderTrigger }}" onChange="{{ onBuilderTriggerChange }}" placeholder="someone lingers by the door" style="flex:1;min-width:140px;background:transparent;border:none;border-bottom:1px dashed oklch(30% 0.015 265);color:oklch(95% 0.005 265);font-size:17px;font-weight:600;outline:none;padding-bottom:2px;"></input>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:17px;font-weight:600;margin-bottom:20px;">
+              <span style="font-size:11px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid oklch(30% 0.02 265);color:oklch(70% 0.01 265);">THEN</span>
+              <span style="color:oklch(90% 0.005 265);">notify me &mdash;</span>
+              <span onClick="{{ cycleBuilderChannel }}" style="font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;background:oklch(85% 0.16 84);color:oklch(18% 0.02 84);cursor:pointer;white-space:nowrap;">{{ builderChannel }}</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:22px;">
+              <sc-for list="{{ suggestions }}" as="sug" hint-placeholder-count="4">
+                <div onClick="{{ sug.use }}" style="font-size:11.5px;padding:6px 11px;border-radius:999px;border:1px solid oklch(22% 0.015 265);color:oklch(62% 0.01 265);cursor:pointer;">{{ sug.text }}</div>
+              </sc-for>
+            </div>
+            <div style="flex:1;"></div>
+            <div onClick="{{ deployAgent }}" style="align-self:flex-start;background:oklch(85% 0.16 84);color:oklch(18% 0.02 84);font-weight:700;font-size:14px;padding:13px 26px;border-radius:12px;cursor:pointer;">deploy agent</div>
+            <sc-if value="{{ deployedFlash }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:12px;font-size:12.5px;color:oklch(80% 0.15 155);">&#10003; Agent deployed on {{ selectedCamera.name }}.</div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;margin-bottom:32px;">
+          <sc-for list="{{ cameras }}" as="cam" hint-placeholder-count="4">
+            <div onClick="{{ cam.select }}" style="{{ cam.filmStyleDetail }}">
+              <div style="width:130px;height:80px;position:relative;">
+                <image-slot id="{{ cam.slotIdMini }}" shape="rect" placeholder="{{ cam.name }}"></image-slot>
+              </div>
+              <div style="padding:7px 9px;font-size:11.5px;font-weight:600;color:oklch(85% 0.005 265);">{{ cam.name }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">What it's watching for</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:32px;">
+          <sc-for list="{{ selectedCamera.jobs }}" as="job" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:14px 18px;">
+              <div style="font-size:13.5px;color:oklch(88% 0.005 265);">{{ job.label }}</div>
+              <div onClick="{{ job.toggle }}" style="{{ job.toggleStyle }}"><div style="{{ job.knobStyle }}"></div></div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Recent activity here</div>
+        <div style="display:flex;flex-direction:column;border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;">
+          <sc-for list="{{ selectedCamera.events }}" as="ev" hint-placeholder-count="2">
+            <div onClick="{{ ev.watch }}" style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid oklch(19% 0.015 265);background:oklch(12% 0.015 265);cursor:pointer;">
+              <div style="{{ ev.pillStyle }}">{{ ev.severityLabel }}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;color:oklch(90% 0.005 265);">{{ ev.text }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);margin-top:2px;">{{ ev.time }} &middot; {{ ev.action }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isChat }}" hint-placeholder-val="{{ false }}">
+      <div style="height:100%;display:flex;flex-direction:column;position:relative;background:radial-gradient(circle at 50% 0%, oklch(20% 0.05 84 / 0.25), transparent 55%);">
+        <div style="text-align:center;padding:28px 24px 0;">
+          <div style="font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:oklch(52% 0.01 265);">Master control</div>
+        </div>
+
+        <sc-if value="{{ chatEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;">
+            <div style="font-size:36px;font-weight:700;letter-spacing:-0.02em;margin-bottom:10px;background:linear-gradient(135deg, oklch(96% 0.01 265), oklch(75% 0.05 84));-webkit-background-clip:text;background-clip:text;color:transparent;">What do you want to know?</div>
+            <div style="font-size:15px;color:oklch(58% 0.01 265);margin-bottom:32px;max-width:440px;">Ask about any camera, event, or moment &mdash; across everything Nightwatch is watching.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:580px;">
+              <sc-for list="{{ askSuggestions }}" as="sug" hint-placeholder-count="4">
+                <div onClick="{{ sug.use }}" style="font-size:13px;padding:9px 15px;border-radius:999px;border:1px solid oklch(24% 0.015 265);background:oklch(13% 0.015 265);color:oklch(78% 0.01 265);cursor:pointer;">{{ sug.text }}</div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ chatNotEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:24px 24px 12px;max-width:680px;margin:0 auto;width:100%;">
+            <sc-for list="{{ chatMessages }}" as="msg" hint-placeholder-count="1">
+              <div style="{{ msg.rowStyle }}">
+                <div style="{{ msg.bubbleStyle }}">{{ msg.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="padding:20px 24px 36px;display:flex;justify-content:center;">
+          <div style="display:flex;gap:10px;width:100%;max-width:640px;background:oklch(14% 0.015 265);border:1px solid oklch(26% 0.015 265);border-radius:999px;padding:8px 8px 8px 22px;box-shadow:0 20px 50px -20px oklch(0% 0 0 / 0.6);">
+            <input value="{{ chatInput }}" onChange="{{ onChatInputChange }}" onKeyDown="{{ onChatKeyDown }}" placeholder="Ask about anything happening right now" style="flex:1;background:transparent;border:none;color:oklch(95% 0.005 265);font-size:14.5px;outline:none;"></input>
+            <div onClick="{{ sendChat }}" style="background:oklch(85% 0.16 84);color:oklch(18% 0.02 84);width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isMap }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1000px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">Camera map</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:20px;">Click two cameras to connect them where they physically meet &mdash; a doorway, hallway, or gate. Agents use these connections to follow someone from one camera into the next.</div>
+
+        <div style="position:relative;height:520px;background-color:oklch(11% 0.015 265);background-image:radial-gradient(oklch(22% 0.015 265) 1px, transparent 1px);background-size:22px 22px;border:1px solid oklch(22% 0.015 265);border-radius:20px;margin-bottom:20px;overflow:hidden;">
+          <div style="position:absolute;top:16px;left:16px;font-size:11.5px;font-weight:600;padding:7px 12px;border-radius:999px;background:oklch(15% 0.015 265 / 0.9);border:1px solid oklch(24% 0.015 265);color:oklch(70% 0.01 265);">{{ mapHint }}</div>
+          <div style="position:absolute;top:16px;right:16px;font-size:11px;font-weight:600;padding:6px 11px;border-radius:999px;background:oklch(24% 0.06 84);color:oklch(85% 0.15 84);">{{ mapConnectionCount }} connected</div>
+
+          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;">
+            <sc-for list="{{ mapLines }}" as="ln" hint-placeholder-count="1">
+              <line x1="{{ ln.x1 }}" y1="{{ ln.y1 }}" x2="{{ ln.x2 }}" y2="{{ ln.y2 }}" stroke="{{ ln.stroke }}" stroke-width="0.6" stroke-dasharray="2,2"></line>
+            </sc-for>
+          </svg>
+
+          <sc-for list="{{ mapLines }}" as="ln" hint-placeholder-count="1">
+            <div style="position:absolute;left:{{ ln.midX }}%;top:{{ ln.midY }}%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:5px;background:oklch(15% 0.015 265);border:1px solid oklch(26% 0.015 265);border-radius:999px;padding:3px 4px 3px 10px;">
+              <input value="{{ ln.label }}" onChange="{{ ln.onLabelChange }}" style="width:96px;background:transparent;border:none;color:oklch(85% 0.005 265);font-size:11px;outline:none;"></input>
+              <div onClick="{{ ln.remove }}" style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:oklch(55% 0.01 265);cursor:pointer;flex-shrink:0;">&times;</div>
+            </div>
+          </sc-for>
+
+          <sc-for list="{{ mapNodes }}" as="n" hint-placeholder-count="4">
+            <div onClick="{{ n.click }}" style="{{ n.style }}">
+              <div style="{{ n.iconStyle }}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>
+              </div>
+              <div style="font-size:12.5px;font-weight:700;white-space:nowrap;">{{ n.name }}</div>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ mapConnectionsEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;bottom:100px;left:0;right:0;text-align:center;font-size:12.5px;color:oklch(45% 0.01 265);">No connections yet &mdash; click two cameras to link them.</div>
+          </sc-if>
+
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:800px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+          <div style="font-size:28px;font-weight:700;letter-spacing:-0.01em;">Agents</div>
+          <div onClick="{{ goCameras }}" style="font-size:13px;font-weight:600;color:oklch(72% 0.01 265);cursor:pointer;">+ New agent</div>
+        </div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:28px;">Every job you've given a camera, running quietly in the background. Pause, edit, or remove any of them.</div>
+
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <sc-for list="{{ mapAgentsList }}" as="ma" hint-placeholder-count="1">
+            <div style="background:oklch(13% 0.015 265);border:1px solid oklch(28% 0.06 84);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;">
+              <div onClick="{{ ma.toggle }}" style="{{ ma.toggleStyle }}"><div style="{{ ma.knobStyle }}"></div></div>
+              <div style="flex:1;min-width:0;">
+                <sc-if value="{{ ma.isEditing }}" hint-placeholder-val="{{ false }}">
+                  <input value="{{ ma.editValue }}" onChange="{{ ma.onEditChange }}" onKeyDown="{{ ma.onEditKeyDown }}" style="width:100%;background:oklch(17% 0.015 265);border:1px solid oklch(30% 0.02 265);border-radius:8px;padding:6px 9px;color:oklch(95% 0.005 265);font-size:13px;outline:none;margin-bottom:3px;"></input>
+                </sc-if>
+                <sc-if value="{{ ma.isNotEditing }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ ma.openDetail }}" style="font-size:13.5px;color:oklch(90% 0.005 265);margin-bottom:3px;cursor:pointer;">{{ ma.name }}</div>
+                </sc-if>
+                <div onClick="{{ ma.openDetail }}" style="font-size:11.5px;color:oklch(55% 0.01 265);cursor:pointer;">{{ ma.camNames }} &middot; uses your <a href="#" onClick="{{ goMap }}">camera map</a></div>
+              </div>
+              <sc-if value="{{ ma.isNotEditing }}" hint-placeholder-val="{{ true }}">
+                <div onClick="{{ ma.startEdit }}" style="font-size:12px;color:oklch(60% 0.01 265);cursor:pointer;white-space:nowrap;">Rename</div>
+              </sc-if>
+              <sc-if value="{{ ma.isEditing }}" hint-placeholder-val="{{ false }}">
+                <div onClick="{{ ma.saveEdit }}" style="font-size:12px;font-weight:700;color:oklch(80% 0.15 155);cursor:pointer;white-space:nowrap;">Save</div>
+              </sc-if>
+              <div onClick="{{ ma.remove }}" style="font-size:12px;color:oklch(55% 0.01 265);cursor:pointer;white-space:nowrap;">Remove</div>
+              <div style="font-size:11px;font-weight:600;padding:6px 11px;border-radius:999px;background:oklch(24% 0.06 84);color:oklch(85% 0.15 84);white-space:nowrap;">Multi-camera</div>
+            </div>
+          </sc-for>
+          <sc-for list="{{ agents }}" as="ag" hint-placeholder-count="4">
+            <div style="background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;">
+              <div onClick="{{ ag.toggleRunning }}" style="{{ ag.runToggleStyle }}"><div style="{{ ag.runKnobStyle }}"></div></div>
+
+              <div style="flex:1;min-width:0;">
+                <sc-if value="{{ ag.isEditing }}" hint-placeholder-val="{{ false }}">
+                  <input value="{{ ag.editValue }}" onChange="{{ ag.onEditChange }}" onKeyDown="{{ ag.onEditKeyDown }}" style="width:100%;background:oklch(17% 0.015 265);border:1px solid oklch(30% 0.02 265);border-radius:8px;padding:7px 10px;color:oklch(95% 0.005 265);font-size:13.5px;outline:none;"></input>
+                </sc-if>
+                <sc-if value="{{ ag.isNotEditing }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ ag.openDetail }}" style="font-size:13.5px;color:oklch(90% 0.005 265);margin-bottom:3px;cursor:pointer;">{{ ag.label }}</div>
+                </sc-if>
+                <div onClick="{{ ag.openDetail }}" style="font-size:11.5px;color:oklch(55% 0.01 265);cursor:pointer;">{{ ag.camName }} &middot; {{ ag.statusText }}</div>
+              </div>
+
+              <div onClick="{{ ag.cycleChannel }}" style="font-size:11px;font-weight:600;padding:6px 11px;border-radius:999px;background:oklch(19% 0.015 265);color:oklch(75% 0.01 265);cursor:pointer;white-space:nowrap;">{{ ag.channel }}</div>
+
+              <sc-if value="{{ ag.isNotEditing }}" hint-placeholder-val="{{ true }}">
+                <div onClick="{{ ag.startEdit }}" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(60% 0.01 265);">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+                </div>
+              </sc-if>
+              <sc-if value="{{ ag.isEditing }}" hint-placeholder-val="{{ false }}">
+                <div onClick="{{ ag.saveEdit }}" style="font-size:12px;font-weight:700;color:oklch(80% 0.15 155);cursor:pointer;white-space:nowrap;">Save</div>
+              </sc-if>
+
+              <div onClick="{{ ag.remove }}" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(55% 0.01 265);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6"/></svg>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ agentsEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="text-align:center;color:oklch(45% 0.01 265);font-size:13.5px;padding:40px 0;">No agents yet. <a href="#" onClick="{{ goCameras }}">Click a camera</a> to give it a job.</div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isPlayback }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:820px;margin:0 auto;padding:48px 48px 80px;">
+        <div onClick="{{ closePlayback }}" style="font-size:13px;color:oklch(62% 0.01 265);cursor:pointer;margin-bottom:16px;">&larr; Back</div>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;">
+          <div style="font-size:24px;font-weight:700;">{{ playback.camName }} &middot; Playback</div>
+          <div style="font-size:13px;color:oklch(58% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ playback.time }}</div>
+        </div>
+
+        <div style="height:400px;border-radius:18px;overflow:hidden;margin-bottom:18px;">
+          <image-slot id="{{ playback.slotId }}" shape="rect" placeholder="{{ playback.camName }} at {{ playback.time }}"></image-slot>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;padding:16px 20px;margin-bottom:18px;">
+          <div style="{{ playback.pillStyle }}">{{ playback.severityLabel }}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13.5px;color:oklch(90% 0.005 265);">{{ playback.text }}</div>
+            <div style="font-size:11.5px;color:oklch(55% 0.01 265);margin-top:2px;">{{ playback.action }}</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div onClick="{{ playback.prevClick }}" style="width:42px;height:42px;border-radius:50%;background:oklch(15% 0.015 265);border:1px solid oklch(26% 0.015 265);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:oklch(85% 0.005 265);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20L9 12l10-8M5 19V5"/></svg>
+          </div>
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;overflow-x:auto;padding:4px;">
+            <sc-for list="{{ playback.dots }}" as="d" hint-placeholder-count="4">
+              <div onClick="{{ d.click }}" style="{{ d.style }}"></div>
+            </sc-for>
+          </div>
+          <div onClick="{{ playback.nextClick }}" style="width:42px;height:42px;border-radius:50%;background:oklch(15% 0.015 265);border:1px solid oklch(26% 0.015 265);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:oklch(85% 0.005 265);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8M19 5v14"/></svg>
+          </div>
+        </div>
+        <div style="text-align:center;font-size:11.5px;color:oklch(50% 0.01 265);margin-top:10px;">Click a dot to jump to that moment, or use the arrows to step through events.</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAgentDetail }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:820px;margin:0 auto;padding:48px 48px 80px;">
+        <div onClick="{{ closeAgentDetail }}" style="font-size:13px;color:oklch(62% 0.01 265);cursor:pointer;margin-bottom:16px;">&larr; Agents</div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:12px;">
+          <div style="font-size:26px;font-weight:700;">{{ agentDetail.title }}</div>
+          <div style="font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;background:oklch(20% 0.015 265);color:oklch(70% 0.01 265);white-space:nowrap;">{{ agentDetail.type }}</div>
+        </div>
+
+        <div style="display:flex;gap:22px;margin-bottom:28px;flex-wrap:wrap;">
+          <div style="font-size:13px;"><span style="color:oklch(55% 0.01 265);">Watching&nbsp;</span><span style="color:oklch(88% 0.005 265);">{{ agentDetail.camNames }}</span></div>
+          <div style="font-size:13px;"><span style="color:oklch(55% 0.01 265);">Status&nbsp;</span><span style="color:oklch(88% 0.005 265);">{{ agentDetail.statusText }}</span></div>
+          <sc-if value="{{ agentDetail.channel }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:13px;"><span style="color:oklch(55% 0.01 265);">Notify via&nbsp;</span><span style="color:oklch(88% 0.005 265);">{{ agentDetail.channel }}</span></div>
+          </sc-if>
+        </div>
+
+        <div style="font-size:15px;font-weight:700;margin-bottom:14px;">Recent matches</div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <sc-for list="{{ agentDetail.recentEvents }}" as="ev" hint-placeholder-count="3">
+            <div onClick="{{ ev.watch }}" style="display:flex;gap:14px;background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;padding:12px;cursor:pointer;">
+              <div style="width:150px;height:96px;border-radius:10px;overflow:hidden;flex-shrink:0;">
+                <image-slot id="{{ ev.slotId }}" shape="rect" placeholder="Snapshot"></image-slot>
+              </div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:6px;">
+                <div style="{{ ev.pillStyle }} align-self:flex-start;display:inline-block;">{{ ev.severityLabel }}</div>
+                <div style="font-size:13.5px;color:oklch(90% 0.005 265);">{{ ev.text }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ ev.camera }} &middot; {{ ev.time }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isActivity }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1040px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">Activity</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:24px;">Everything Nightwatch has noticed, sorted by how much it matters.</div>
+        <div style="display:flex;gap:8px;margin-bottom:24px;">
+          <sc-for list="{{ activityFilters }}" as="f" hint-placeholder-count="3">
+            <div onClick="{{ f.select }}" style="{{ f.style }}">{{ f.label }}</div>
+          </sc-for>
+        </div>
+
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Tracked across cameras</div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px;">
+          <sc-for list="{{ journeys }}" as="j" hint-placeholder-count="1">
+            <div style="background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;padding:16px 18px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <div style="{{ j.pillStyle }}">{{ j.severityLabel }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);">{{ j.subject }}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                <sc-for list="{{ j.steps }}" as="st" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <div style="background:oklch(18% 0.015 265);border-radius:10px;padding:8px 12px;flex-shrink:0;">
+                      <div style="font-size:12.5px;font-weight:600;color:oklch(88% 0.005 265);white-space:nowrap;">{{ st.event }} {{ st.camera }}</div>
+                      <div style="font-size:11px;color:oklch(55% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;">{{ st.time }}</div>
+                    </div>
+                    <sc-if value="{{ st.hasNext }}" hint-placeholder-val="{{ true }}">
+                      <span style="color:{{ st.arrowColor }};">&rarr;</span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size:12.5px;color:oklch(75% 0.01 265);">{{ j.summary }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;">
+          <sc-for list="{{ filteredEvents }}" as="ev" hint-placeholder-count="6">
+            <div onClick="{{ ev.watch }}" style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid oklch(19% 0.015 265);background:oklch(12% 0.015 265);cursor:pointer;">
+              <div style="{{ ev.pillStyle }}">{{ ev.severityLabel }}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13.5px;color:oklch(90% 0.005 265);">{{ ev.text }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);margin-top:3px;">{{ ev.camera }} &middot; {{ ev.time }}</div>
+              </div>
+              <div style="font-size:11.5px;color:oklch(58% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;">{{ ev.action }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isDigests }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:800px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">Digests</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:28px;">A plain-language recap, so you never have to scroll through footage.</div>
+
+        <div style="background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:18px;padding:28px 30px;margin-bottom:28px;">
+          <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:oklch(60% 0.01 265);margin-bottom:10px;">This week</div>
+          <div style="font-size:16px;line-height:1.7;color:oklch(90% 0.005 265);">Nightwatch kept an eye on <b>4 cameras</b> and checked in <b>1,842 times</b>. Only <b>6 moments</b> needed you &mdash; the rest was quiet.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <sc-for list="{{ digestDays }}" as="d" hint-placeholder-count="7">
+            <div style="display:flex;align-items:center;gap:14px;background:oklch(12% 0.015 265);border:1px solid oklch(20% 0.015 265);border-radius:12px;padding:14px 18px;">
+              <div style="width:44px;font-size:12px;font-weight:700;color:oklch(65% 0.01 265);">{{ d.day }}</div>
+              <div style="{{ d.dotStyle }}"></div>
+              <div style="flex:1;font-size:13.5px;color:oklch(85% 0.005 265);">{{ d.summary }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:760px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:28px;">Settings</div>
+
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Who gets notified</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:32px;">
+          <sc-for list="{{ contacts }}" as="c" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:14px 18px;">
+              <div>
+                <div style="font-size:13.5px;font-weight:600;color:oklch(90% 0.005 265);">{{ c.name }}</div>
+                <div style="font-size:12px;color:oklch(58% 0.01 265);">{{ c.method }}</div>
+              </div>
+              <div style="font-size:11px;padding:5px 10px;border-radius:999px;background:oklch(20% 0.06 155 / 0.3);color:oklch(78% 0.15 155);">Active</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:16px 18px;margin-bottom:32px;">
+          <div>
+            <div style="font-size:13.5px;font-weight:600;margin-bottom:2px;">Quiet hours</div>
+            <div style="font-size:12px;color:oklch(58% 0.01 265);">Only urgent moments will reach you, 11pm&ndash;7am.</div>
+          </div>
+          <div onClick="{{ toggleQuietHours }}" style="{{ quietHoursToggleStyle }}"><div style="{{ quietHoursKnobStyle }}"></div></div>
+        </div>
+
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Where Nightwatch can act</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+          <sc-for list="{{ integrations }}" as="i" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(14% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:14px 16px;">
+              <div style="font-size:13px;color:oklch(88% 0.005 265);">{{ i.name }}</div>
+              <div style="{{ i.badgeStyle }}">{{ i.status }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showCommandBar }}" hint-placeholder-val="{{ true }}">
+      <div style="height:106px;flex-shrink:0;"></div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ showCommandBar }}" hint-placeholder-val="{{ true }}">
+    <div style="{{ commandBarStyle }}">
+      <sc-if value="{{ chatLatestReply }}" hint-placeholder-val="{{ false }}">
+        <div style="pointer-events:auto;max-width:560px;width:100%;background:oklch(15% 0.015 265);border:1px solid oklch(28% 0.015 265);border-radius:14px;padding:11px 15px;font-size:12.5px;line-height:1.5;color:oklch(88% 0.005 265);box-shadow:0 12px 34px -12px oklch(0% 0 0 / 0.7);">{{ chatLatestReply }}</div>
+      </sc-if>
+      <div style="pointer-events:auto;display:flex;gap:8px;align-items:center;width:100%;max-width:640px;background:oklch(15% 0.015 265 / 0.9);backdrop-filter:blur(22px) saturate(130%);border:1px solid oklch(30% 0.015 265);border-radius:999px;padding:7px 7px 7px 18px;box-shadow:0 24px 60px -24px oklch(0% 0 0 / 0.8);">
+        <div style="width:7px;height:7px;border-radius:50%;background:oklch(79.2% 0.209 151.711);animation:nwPulse 2s ease-in-out infinite;flex-shrink:0;"></div>
+        <input value="{{ chatInput }}" onChange="{{ onChatInputChange }}" onKeyDown="{{ onBarChatKeyDown }}" placeholder="Give Nightwatch a job, or ask about any camera&hellip;" style="flex:1;background:transparent;border:none;color:oklch(96% 0.005 265);font-size:13.5px;outline:none;"></input>
+        <div onClick="{{ sendBarChat }}" style-hover="transform:scale(1.07)" style="transition:transform 160ms ease;background:oklch(85% 0.16 84);color:oklch(18% 0.02 84);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="{{ chatColumnStyle }}">
+    <div style="display:flex;flex-direction:column;height:100%;width:400px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid oklch(24% 0.015 265);flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:9px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:oklch(79.2% 0.209 151.711);"></div>
+          <div style="min-width:0;"><div style="font-size:14px;font-weight:700;white-space:nowrap;">Ask Nightwatch</div><div style="font-size:10.5px;color:oklch(55% 0.01 265);white-space:nowrap;">Master control</div></div>
+        </div>
+        <div onClick="{{ closeChatBarPanel }}" style="width:28px;height:28px;border-radius:50%;background:oklch(17% 0.015 265);border:1px solid oklch(28% 0.015 265);display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(65% 0.01 265);font-size:15px;flex-shrink:0;">&times;</div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:18px 18px 6px;">
+        <sc-if value="{{ chatEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:oklch(48% 0.01 265);font-size:12.5px;text-align:center;gap:10px;padding:0 8px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            <div>Ask about any camera, event, or moment.</div>
+          </div>
+        </sc-if>
+        <sc-for list="{{ chatMessages }}" as="msg" hint-placeholder-count="1">
+          <div style="{{ msg.rowStyle }}"><div style="{{ msg.bubbleStyle }}">{{ msg.text }}</div></div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isAdminMode }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;height:100vh;width:100%;background:oklch(7% 0.01 265);color:oklch(97% 0.005 265);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;">
+
+  <div style="width:232px;flex-shrink:0;background:oklch(10% 0.01 265);border-right:1px solid oklch(20% 0.015 265);display:flex;flex-direction:column;padding:24px 16px;">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 6px 8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:oklch(70.4% 0.191 22.216);box-shadow:0 0 0 4px oklch(70.4% 0.191 22.216 / 0.15);"></div>
+      <div style="font-size:17px;font-weight:700;letter-spacing:-0.01em;">Nightwatch</div>
+    </div>
+    <div style="font-size:10.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:oklch(60% 0.14 22);padding:0 8px 24px 8px;">Super Admin</div>
+
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <div onClick="{{ goAdminOverview }}" style="{{ adminNavItemStyle.overview }}"><span>Overview</span></div>
+      <div onClick="{{ goAdminAccounts }}" style="{{ adminNavItemStyle.accounts }}"><span>Accounts</span></div>
+      <div onClick="{{ goAdminAI }}" style="{{ adminNavItemStyle.ai }}"><span>AI Console</span></div>
+      <div onClick="{{ goAdminSystem }}" style="{{ adminNavItemStyle.system }}"><span>System</span></div>
+    </div>
+
+    <div style="flex:1;"></div>
+    <div onClick="{{ exitAdmin }}" style="font-size:12.5px;font-weight:600;color:oklch(62% 0.01 265);cursor:pointer;padding:10px 12px;">&larr; Exit to customer app</div>
+  </div>
+
+  <div style="flex:1;overflow-y:auto;min-width:0;">
+
+    <sc-if value="{{ isAdminOverview }}" hint-placeholder-val="{{ true }}">
+      <div style="max-width:1080px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">Platform overview</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:28px;">Everything running across every account, right now.</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:32px;">
+          <sc-for list="{{ adminStats }}" as="s" hint-placeholder-count="4">
+            <div style="background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:14px;padding:18px;">
+              <div style="font-size:24px;font-weight:700;margin-bottom:4px;">{{ s.value }}</div>
+              <div style="font-size:12px;color:oklch(58% 0.01 265);">{{ s.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Recent signups</div>
+        <div style="display:flex;flex-direction:column;border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;">
+          <sc-for list="{{ adminAccounts }}" as="a" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid oklch(19% 0.015 265);background:oklch(11% 0.015 265);">
+              <div style="{{ a.dotStyle }}"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;color:oklch(90% 0.005 265);">{{ a.name }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);">{{ a.plan }} &middot; {{ a.cameras }} cameras</div>
+              </div>
+              <div style="font-size:11.5px;color:oklch(58% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ a.joined }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAdminAccounts }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1080px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">Admin Panel</div>
+        <div style="font-size:14px;color:oklch(60% 0.01 265);margin-bottom:24px;">God mode &mdash; full control over all orgs, users, passwords, sessions.</div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <div style="display:flex;gap:8px;">
+            <div onClick="{{ setAdminUsersTab }}" style="{{ usersTabStyle }}">Users (1)</div>
+            <div onClick="{{ setAdminOrgsTab }}" style="{{ orgsTabStyle }}">Organizations (0)</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:oklch(65% 0.01 265);cursor:pointer;">
+            <input type="checkbox" checked="{{ showDeleted }}" onChange="{{ toggleShowDeleted }}"></input>
+            Show deleted
+          </label>
+        </div>
+
+        <sc-if value="{{ isAdminUsersTab }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="font-size:15px;font-weight:700;">All Users</div>
+            <div style="background:oklch(55% 0.15 235);color:white;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:9px;cursor:pointer;">+ Create User</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:oklch(12% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:14px 18px;">
+            <div style="font-size:13.5px;font-weight:700;color:oklch(92% 0.005 265);">Super Admin</div>
+            <div style="font-size:12.5px;color:oklch(55% 0.01 265);">@super_nightvision</div>
+            <div style="font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;background:oklch(30% 0.15 22 / 0.4);color:oklch(75% 0.18 22);">super_admin</div>
+            <div style="flex:1;"></div>
+            <div style="display:flex;gap:16px;font-size:12.5px;color:oklch(70% 0.01 265);">
+              <span style="cursor:pointer;">Edit</span><span style="cursor:pointer;">Password</span><span style="cursor:pointer;">Sessions</span><span style="cursor:pointer;">Kick</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAdminOrgsTab }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="font-size:15px;font-weight:700;">All Organizations</div>
+            <div style="background:oklch(55% 0.15 235);color:white;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:9px;cursor:pointer;">+ Create Org</div>
+          </div>
+          <div style="font-size:13px;color:oklch(50% 0.01 265);padding:20px 0;">No organizations yet.</div>
+        </sc-if>
+
+        <div style="font-size:15px;font-weight:700;margin:32px 0 12px;">Accounts</div>
+        <div style="display:flex;flex-direction:column;border:1px solid oklch(22% 0.015 265);border-radius:14px;overflow:hidden;">
+          <sc-for list="{{ adminAccounts }}" as="a" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid oklch(19% 0.015 265);background:oklch(11% 0.015 265);">
+              <div style="{{ a.dotStyle }}"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;color:oklch(90% 0.005 265);">{{ a.name }}</div>
+                <div style="font-size:11.5px;color:oklch(55% 0.01 265);">{{ a.type }}</div>
+              </div>
+              <div style="font-size:12px;color:oklch(68% 0.01 265);width:110px;">{{ a.plan }}</div>
+              <div style="font-size:12px;color:oklch(68% 0.01 265);width:100px;">{{ a.cameras }} cameras</div>
+              <div style="{{ a.statusStyle }}">{{ a.status }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAdminAI }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:800px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:6px;">AI Console</div>
+        <div style="font-size:15px;color:oklch(65% 0.01 265);margin-bottom:24px;">Run any instruction through the live model to see exactly how it will be understood, before a customer sees it.</div>
+
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+          <sc-for list="{{ aiPresets }}" as="p" hint-placeholder-count="4">
+            <div onClick="{{ p.use }}" style="font-size:12px;padding:7px 12px;border-radius:999px;border:1px solid oklch(26% 0.015 265);color:oklch(75% 0.01 265);cursor:pointer;">{{ p.text }}</div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-bottom:20px;">
+          <input value="{{ aiInput }}" onChange="{{ onAiInputChange }}" onKeyDown="{{ onAiKeyDown }}" placeholder="e.g. call the manager if someone is at the register after 10pm" style="flex:1;background:oklch(13% 0.015 265);border:1px solid oklch(26% 0.015 265);border-radius:12px;padding:13px 16px;color:oklch(95% 0.005 265);font-size:14px;outline:none;"></input>
+          <div onClick="{{ runAiTest }}" style="background:oklch(70.4% 0.191 22.216);color:oklch(15% 0.02 22);font-weight:700;font-size:14px;padding:13px 20px;border-radius:12px;cursor:pointer;white-space:nowrap;">Run</div>
+        </div>
+
+        <sc-if value="{{ aiResultReady }}" hint-placeholder-val="{{ false }}">
+          <div style="background:oklch(12% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:16px;padding:22px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.9;color:oklch(85% 0.005 265);">
+            <div>model &nbsp;&nbsp;&nbsp;<span style="color:oklch(65% 0.01 265);">nightwatch-vision-v3</span></div>
+            <div>latency &nbsp;<span style="color:oklch(65% 0.01 265);">{{ aiResult.latency }}ms</span></div>
+            <div>intent &nbsp;&nbsp;&nbsp;<span style="color:oklch(85% 0.16 84);">{{ aiResult.intent }}</span></div>
+            <div>trigger &nbsp;&nbsp;<span style="color:oklch(80% 0.005 265);">{{ aiResult.trigger }}</span></div>
+            <div>severity &nbsp;<span style="{{ aiResult.severityColor }}">{{ aiResult.severity }}</span></div>
+            <div>channel &nbsp;&nbsp;<span style="color:oklch(80% 0.005 265);">{{ aiResult.channel }}</span></div>
+            <div>confidence <span style="color:oklch(79.2% 0.209 151.711);">{{ aiResult.confidence }}%</span></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAdminSystem }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:760px;margin:0 auto;padding:48px 48px 80px;">
+        <div style="font-size:28px;font-weight:700;margin-bottom:28px;">System health</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <sc-for list="{{ systemServices }}" as="s" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(13% 0.015 265);border:1px solid oklch(22% 0.015 265);border-radius:12px;padding:15px 18px;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="{{ s.dotStyle }}"></div>
+                <div style="font-size:13.5px;color:oklch(88% 0.005 265);">{{ s.name }}</div>
+              </div>
+              <div style="font-size:12px;color:oklch(58% 0.01 265);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ s.uptime }} uptime</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    view: 'home',
+    selectedCameraId: 'front-door',
+    pickedCameraId: 'front-door',
+    activityFilter: 'all',
+    chatInput: '',
+    chatPanelOpen: false,
+    quietHours: true,
+    chats: {},
+    chat: [],
+    mode: 'app',
+    adminView: 'overview',
+    aiInput: '',
+    aiResult: null,
+    adminUsersTab: 'users',
+    showDeleted: false,
+    mapSelectedNode: null,
+    connections: [{ id: 'garage|shop-floor', a: 'garage', b: 'shop-floor', label: 'Back hallway' }],
+    mapAgents: [{ id: 'default', name: 'Follow anyone moving between cameras', running: true, camIds: ['front-door', 'backyard', 'garage', 'shop-floor'] }],
+    mapAgentEditingId: null,
+    mapAgentEditValue: '',
+    mapChat: [],
+    mapChatInput: '',
+    agentDetail: null,
+    cameraData: {
+      'front-door': { name: 'Front Door', location: 'Home', jobLabels: ['Package left at the door', 'Someone lingering after dark'] },
+      'backyard': { name: 'Backyard', location: 'Home', jobLabels: ['Kids near the pool alone'] },
+      'garage': { name: 'Garage', location: 'Home', jobLabels: ['Garage door left open'] },
+      'shop-floor': { name: 'Shop Floor', location: 'Business', jobLabels: ['Register left unattended', 'Someone after closing'] }
+    },
+    jobToggles: {},
+    jobChannels: {},
+    editingAgentKey: null,
+    editAgentValue: '',
+    builderCamId: 'front-door',
+    builderTrigger: '',
+    builderChannel: 'Text message',
+    deployedFlash: false
+  };
+
+  channelCycle = ['Text message', 'Phone call', 'Log only'];
+
+  events = [
+    { id: 1, camera: 'Front Door', cameraId: 'front-door', text: 'A package was left by the door.', severity: 'note', time: 'Today, 2:14 PM', action: 'Saved a clip' },
+    { id: 2, camera: 'Shop Floor', cameraId: 'shop-floor', text: 'Someone stayed in the store after closing.', severity: 'urgent', time: 'Today, 9:47 PM', action: 'Called you' },
+    { id: 3, camera: 'Backyard', cameraId: 'backyard', text: 'Delivery driver dropped a box and left.', severity: 'fine', time: 'Today, 1:03 PM', action: 'Logged only' },
+    { id: 4, camera: 'Garage', cameraId: 'garage', text: 'Garage door left open for 2 hours.', severity: 'note', time: 'Today, 11:20 AM', action: 'Texted you' },
+    { id: 5, camera: 'Front Door', cameraId: 'front-door', text: 'Same delivery driver as usual, nothing new.', severity: 'fine', time: 'Today, 10:05 AM', action: 'Logged only' },
+    { id: 6, camera: 'Shop Floor', cameraId: 'shop-floor', text: 'Register was left open during a rush.', severity: 'note', time: 'Yesterday, 6:12 PM', action: 'Texted the manager' },
+    { id: 7, camera: 'Backyard', cameraId: 'backyard', text: 'Motion after midnight near the fence.', severity: 'urgent', time: 'Yesterday, 12:41 AM', action: 'Called you' },
+    { id: 8, camera: 'Garage', cameraId: 'garage', text: 'Nothing unusual all day.', severity: 'fine', time: 'Yesterday', action: 'Logged only' }
+  ];
+
+  suggestions = [
+    'Package left at the door',
+    'Someone lingering after dark',
+    'Car parked in the fire lane',
+    'Register left unattended'
+  ];
+
+  askSuggestionsData = [
+    'What happened today?',
+    'Is everything okay at the shop?',
+    'Show me anything urgent',
+    'Summarize this week',
+    'Is anyone being tracked across cameras?'
+  ];
+
+  journeysData = [
+    {
+      subject: 'Unfamiliar visitor', severity: 'urgent',
+      steps: [
+        { camera: 'Front Door', time: '9:41 PM', event: 'Entered' },
+        { camera: 'Driveway', time: '9:43 PM', event: 'Entered' },
+        { camera: 'Backyard', time: '9:47 PM', event: 'Entered' }
+      ],
+      summary: "Same person followed across 3 cameras in 6 minutes, ending up near the back door after dark. That's why this was flagged urgent."
+    },
+    {
+      subject: 'Worker \u00b7 Floor shift', severity: 'fine',
+      steps: [
+        { camera: 'Garage', time: '8:02 AM', event: 'Entered' },
+        { camera: 'Garage', time: '8:19 AM', event: 'Exited' },
+        { camera: 'Shop Floor', time: '8:20 AM', event: 'Entered' },
+        { camera: 'Shop Floor', time: '11:45 AM', event: 'Exited' }
+      ],
+      summary: "Full shift logged automatically \u2014 every entry and exit between zones, timestamped, no manual clock-in needed."
+    }
+  ];
+
+  digestDays = [
+    { day: 'Mon', severity: 'fine', summary: 'Quiet day. Nothing needed you.' },
+    { day: 'Tue', severity: 'note', summary: 'A delivery sat on the porch for a bit longer than usual.' },
+    { day: 'Wed', severity: 'fine', summary: 'Quiet day. Nothing needed you.' },
+    { day: 'Thu', severity: 'urgent', summary: 'Someone lingered by the shop after closing &mdash; you got a call.' },
+    { day: 'Fri', severity: 'note', summary: 'Garage door was left open for a couple hours.' },
+    { day: 'Sat', severity: 'fine', summary: 'Quiet day. Nothing needed you.' },
+    { day: 'Sun', severity: 'fine', summary: 'Quiet day. Nothing needed you.' }
+  ];
+
+  contacts = [
+    { name: 'Sam (you)', method: 'Call + text' },
+    { name: 'Jordan', method: 'Text only' }
+  ];
+
+  adminAccountsData = [
+    { name: 'Sam Rivera (Home)', type: 'Home', plan: 'Family', cameras: 4, status: 'Active', joined: '2 days ago' },
+    { name: 'Corner Market', type: 'Business', plan: 'Business', cameras: 9, status: 'Active', joined: '5 days ago' },
+    { name: 'The Bright Loft', type: 'Home', plan: 'Family', cameras: 3, status: 'Active', joined: '1 week ago' },
+    { name: 'Fresh Cuts Barber', type: 'Business', plan: 'Business', cameras: 6, status: 'Trial', joined: '2 weeks ago' },
+    { name: 'Whitfield Family', type: 'Home', plan: 'Family', cameras: 2, status: 'Active', joined: '3 weeks ago' }
+  ];
+
+  aiPresets = [
+    'Call me if a package is left at the door',
+    'Text the manager if the register is unattended after close',
+    'Alert me if someone lingers by the gate after dark',
+    'Log it quietly if a delivery comes and goes'
+  ];
+
+  systemServicesData = [
+    { name: 'Camera ingestion', uptime: '99.98%', ok: true },
+    { name: 'AI inference (nightwatch-vision-v3)', uptime: '99.95%', ok: true },
+    { name: 'Notification dispatch', uptime: '99.99%', ok: true },
+    { name: 'Clip storage', uptime: '100%', ok: true }
+  ];
+
+  integrations = [
+    { name: 'Phone call', status: 'Connected' },
+    { name: 'Text message', status: 'Connected' },
+    { name: 'Email', status: 'Connected' },
+    { name: 'Slack', status: 'Connect' }
+  ];
+
+  severityColor(sev) {
+    if (sev === 'urgent') return 'oklch(70.4% 0.191 22.216)';
+    if (sev === 'note') return 'oklch(82.8% 0.189 84.429)';
+    return 'oklch(79.2% 0.209 151.711)';
+  }
+  severityLabel(sev) {
+    if (sev === 'urgent') return 'Urgent';
+    if (sev === 'note') return 'Worth a look';
+    return 'All clear';
+  }
+  pillStyle(sev) {
+    const c = this.severityColor(sev);
+    return `font-size:11px;font-weight:700;letter-spacing:0.02em;padding:6px 10px;border-radius:999px;color:${c};white-space:nowrap;flex-shrink:0;background-color:color-mix(in oklab, ${c} 16%, transparent);`;
+  }
+  dotStyleFor(sev) {
+    const c = this.severityColor(sev);
+    return `width:9px;height:9px;border-radius:50%;background:${c};`;
+  }
+  camDotStyle(sev) {
+    const c = this.severityColor(sev);
+    return `position:absolute;top:10px;right:10px;width:9px;height:9px;border-radius:50%;background:${c};box-shadow:0 0 0 3px oklch(9% 0.015 265 / 0.6);`;
+  }
+
+  setView = (v) => this.setState({ view: v });
+  goHome = () => this.setView('home');
+  goCameras = () => this.setView('cameras');
+  goAgents = () => this.setView('agents');
+  goMap = () => this.setView('map');
+
+  mapPositions = { 'front-door': [22, 25], 'backyard': [78, 25], 'garage': [22, 75], 'shop-floor': [78, 75] };
+
+  connectionKey(a, b) { return [a, b].sort().join('|'); }
+
+  clickMapNode = (id) => {
+    const sel = this.state.mapSelectedNode;
+    if (!sel) { this.setState({ mapSelectedNode: id }); return; }
+    if (sel === id) { this.setState({ mapSelectedNode: null }); return; }
+    const key = this.connectionKey(sel, id);
+    const exists = this.state.connections.some(c => this.connectionKey(c.a, c.b) === key);
+    const connections = exists
+      ? this.state.connections.filter(c => this.connectionKey(c.a, c.b) !== key)
+      : [...this.state.connections, { id: key, a: sel, b: id, label: 'Connected' }];
+    this.setState({ connections, mapSelectedNode: null });
+  };
+
+  editConnectionLabel = (id, value) => {
+    this.setState({ connections: this.state.connections.map(c => c.id === id ? { ...c, label: value } : c) });
+  };
+  removeConnection = (id) => this.setState({ connections: this.state.connections.filter(c => c.id !== id) });
+  goActivity = () => this.setView('activity');
+  goDigests = () => this.setView('digests');
+  goSettings = () => this.setView('settings');
+  goChat = () => this.setState({ chatPanelOpen: true });
+  pickBuilderCamera = (id) => this.setState({ builderCamId: id, deployedFlash: false });
+  onBuilderTriggerChange = (e) => this.setState({ builderTrigger: e.target.value });
+  cycleBuilderChannel = () => {
+    const next = this.channelCycle[(this.channelCycle.indexOf(this.state.builderChannel) + 1) % this.channelCycle.length];
+    this.setState({ builderChannel: next });
+  };
+  deployAgent = () => {
+    const text = this.state.builderTrigger.trim();
+    if (!text) return;
+    const camId = this.state.builderCamId;
+    const cameraData = { ...this.state.cameraData };
+    cameraData[camId] = { ...cameraData[camId], jobLabels: [...cameraData[camId].jobLabels, text] };
+    this.setState({ cameraData, builderTrigger: '', deployedFlash: true });
+  };
+
+  selectCamera = (id) => this.setState({ view: 'camera-detail', selectedCameraId: id, builderCamId: id, builderTrigger: '', deployedFlash: false });
+
+  pickCamera = (id) => this.setState({ pickedCameraId: id });
+  pickEverywhere = () => this.setState({ pickedCameraId: 'everywhere' });
+
+  onChatInputChange = (e) => this.setState({ chatInput: e.target.value });
+  onChatKeyDown = (e) => { if (e.key === 'Enter') this.sendChat(); };
+  onBarChatKeyDown = (e) => { if (e.key === 'Enter') this.sendBarChat(); };
+  sendBarChat = () => {
+    if (!this.state.chatInput.trim()) return;
+    this.sendChat();
+    this.setState({ chatPanelOpen: true });
+  };
+  closeChatBarPanel = () => this.setState({ chatPanelOpen: false });
+  useSuggestion = (text) => this.setState({ chatInput: text });
+
+  answerMasterQuery = (lower) => {
+    const urgent = this.events.filter(e => e.severity === 'urgent');
+    const note = this.events.filter(e => e.severity === 'note');
+    const camMatch = Object.values(this.state.cameraData).find(c => lower.includes(c.name.toLowerCase()));
+    if (camMatch) {
+      const camId = Object.keys(this.state.cameraData).find(k => this.state.cameraData[k] === camMatch);
+      const ev = this.events.find(e => e.cameraId === camId);
+      return ev ? `${camMatch.name}: ${ev.text} (${ev.time}, ${ev.action.toLowerCase()}).` : `${camMatch.name} has been quiet &mdash; nothing to report.`;
+    }
+    if (lower.includes('urgent')) {
+      return urgent.length ? `${urgent.length} urgent moment${urgent.length > 1 ? 's' : ''}: ${urgent.map(e => e.camera + ' &mdash; ' + e.text).join('; ')}.` : 'Nothing urgent anywhere right now.';
+    }
+    if (lower.includes('follow') || lower.includes('track') || lower.includes('moving')) {
+      const j = this.journeysData[0];
+      return `Yes &mdash; I follow people across cameras automatically. Latest: ${j.subject} went ${j.steps.map(s => s.camera).join(' \u2192 ')} in a few minutes. ${j.summary}`;
+    }
+    if (lower.includes('week') || lower.includes('summar')) {
+      return 'This week: 4 cameras, 1,842 check-ins, only 6 moments needed you. Mostly quiet, with one urgent call from Shop Floor on Thursday night.';
+    }
+    if (lower.includes('today') || lower.includes('happened') || lower.includes('show')) {
+      return `Today: ${note.length} worth-a-look moment${note.length === 1 ? '' : 's'} and ${urgent.length} urgent one${urgent.length === 1 ? '' : 's'}, out of 214 check-ins. Everything else was quiet.`;
+    }
+    if (lower.includes('okay') || lower.includes('ok') || lower.includes('fine') || lower.includes('quiet')) {
+      return urgent.length ? `Mostly, but ${urgent[0].camera} had something urgent: ${urgent[0].text}` : 'Yes &mdash; every camera is quiet right now.';
+    }
+    return "Got it. I'm watching all your cameras and will let you know the moment anything worth your attention happens.";
+  };
+
+  sendChat = () => {
+    const text = this.state.chatInput.trim();
+    if (!text) return;
+    const chat = this.state.chat.slice();
+    chat.push({ role: 'user', text });
+    chat.push({ role: 'agent', text: this.answerMasterQuery(text.toLowerCase()) });
+    this.setState({ chat, chatInput: '' });
+  };
+
+  toggleJob = (camId, idx) => {
+    const key = camId + ':' + idx;
+    const jobToggles = { ...this.state.jobToggles };
+    jobToggles[key] = jobToggles[key] === false ? true : false;
+    this.setState({ jobToggles });
+  };
+
+  toggleQuietHours = () => this.setState({ quietHours: !this.state.quietHours });
+
+  createMapAgent = () => {
+    const camIds = Array.from(new Set(this.state.connections.flatMap(c => [c.a, c.b])));
+    if (!camIds.length) return;
+    const id = 'agent-' + Date.now();
+    this.setState({ mapAgents: [...this.state.mapAgents, { id, name: 'New tracking agent', running: true, camIds }] });
+  };
+  toggleMapAgent = (id) => this.setState({ mapAgents: this.state.mapAgents.map(a => a.id === id ? { ...a, running: !a.running } : a) });
+  removeMapAgent = (id) => this.setState({ mapAgents: this.state.mapAgents.filter(a => a.id !== id) });
+  startEditMapAgent = (id, name) => this.setState({ mapAgentEditingId: id, mapAgentEditValue: name });
+  onEditMapAgentChange = (e) => this.setState({ mapAgentEditValue: e.target.value });
+  onEditMapAgentKeyDown = (e) => { if (e.key === 'Enter') this.saveEditMapAgent(); };
+  onMapChatChange = (e) => this.setState({ mapChatInput: e.target.value });
+  onMapChatKeyDown = (e) => { if (e.key === 'Enter') this.sendMapChat(); };
+  useMapSuggestion = (text) => this.setState({ mapChatInput: text });
+  sendMapChat = () => {
+    const text = this.state.mapChatInput.trim();
+    if (!text) return;
+    const mapChat = this.state.mapChat.slice();
+    mapChat.push({ role: 'user', text });
+    const camIds = Array.from(new Set(this.state.connections.flatMap(c => [c.a, c.b])));
+    let reply, mapAgents = this.state.mapAgents;
+    if (!camIds.length) {
+      reply = "Connect at least two cameras on the map above first, then I'll assign an agent to watch that path.";
+    } else {
+      const name = text.charAt(0).toUpperCase() + text.slice(1);
+      const id = 'agent-' + Date.now();
+      mapAgents = [...mapAgents, { id, name, running: true, camIds }];
+      const camNames = camIds.map(cid => this.state.cameraData[cid].name).join(' \u2192 ');
+      reply = `Deployed. "${name}" is now watching ${camNames} and will log anyone who moves between them.`;
+    }
+    mapChat.push({ role: 'agent', text: reply });
+    this.setState({ mapChat, mapChatInput: '', mapAgents });
+  };
+  saveEditMapAgent = () => {
+    const id = this.state.mapAgentEditingId;
+    this.setState({
+      mapAgents: this.state.mapAgents.map(a => a.id === id ? { ...a, name: this.state.mapAgentEditValue.trim() || a.name } : a),
+      mapAgentEditingId: null, mapAgentEditValue: ''
+    });
+  };
+
+  cycleChannel = (key) => {
+    const jobChannels = { ...this.state.jobChannels };
+    const cur = jobChannels[key] || 'Text message';
+    const next = this.channelCycle[(this.channelCycle.indexOf(cur) + 1) % this.channelCycle.length];
+    jobChannels[key] = next;
+    this.setState({ jobChannels });
+  };
+
+  startEditAgent = (key, label) => this.setState({ editingAgentKey: key, editAgentValue: label });
+  onEditAgentChange = (e) => this.setState({ editAgentValue: e.target.value });
+  onEditAgentKeyDown = (e) => { if (e.key === 'Enter') this.saveEditAgent(); };
+  saveEditAgent = () => {
+    const key = this.state.editingAgentKey;
+    if (!key) return;
+    const [camId, idxStr] = key.split(':');
+    const idx = parseInt(idxStr, 10);
+    const cameraData = { ...this.state.cameraData };
+    const labels = cameraData[camId].jobLabels.slice();
+    labels[idx] = this.state.editAgentValue.trim() || labels[idx];
+    cameraData[camId] = { ...cameraData[camId], jobLabels: labels };
+    this.setState({ cameraData, editingAgentKey: null, editAgentValue: '' });
+  };
+  openJobAgentDetail = (camId, idx) => this.setState({ agentDetail: { kind: 'job', camId, idx }, view: 'agent-detail' });
+  openMapAgentDetail = (id) => this.setState({ agentDetail: { kind: 'map', id }, view: 'agent-detail' });
+  closeAgentDetail = () => this.setState({ view: 'agents' });
+
+  openPlayback = (camId, eventId, from) => this.setState({ view: 'playback', playbackCamId: camId, playbackEventId: eventId, playbackFrom: from || 'activity' });
+  closePlayback = () => this.setState({ view: this.state.playbackFrom });
+  setPlaybackEvent = (id) => this.setState({ playbackEventId: id });
+
+  removeAgent = (camId, idx) => {
+    const cameraData = { ...this.state.cameraData };
+    const labels = cameraData[camId].jobLabels.slice();
+    labels.splice(idx, 1);
+    cameraData[camId] = { ...cameraData[camId], jobLabels: labels };
+    this.setState({ cameraData });
+  };
+
+  enterAdmin = () => this.setState({ mode: 'admin', adminView: 'overview' });
+  setAdminUsersTab = (t) => this.setState({ adminUsersTab: t });
+  toggleShowDeleted = () => this.setState({ showDeleted: !this.state.showDeleted });
+  exitAdmin = () => this.setState({ mode: 'app' });
+  setAdminView = (v) => this.setState({ adminView: v });
+
+  onAiInputChange = (e) => this.setState({ aiInput: e.target.value });
+  onAiKeyDown = (e) => { if (e.key === 'Enter') this.runAiTest(); };
+  useAiPreset = (text) => this.setState({ aiInput: text });
+
+  runAiTest = () => {
+    const text = this.state.aiInput.trim().toLowerCase();
+    if (!text) return;
+    let severity = 'note', channel = 'Text message';
+    if (text.includes('call') || text.includes('urgent') || text.includes('after')) { severity = 'urgent'; channel = 'Phone call'; }
+    if (text.includes('log') || text.includes('quiet')) { severity = 'fine'; channel = 'Log only'; }
+    const trigger = text.includes('register') ? 'Object/zone: register area' :
+      text.includes('door') || text.includes('package') ? 'Object: package, zone: entryway' :
+      text.includes('gate') || text.includes('dark') ? 'Person detected, low light' : 'Custom motion pattern';
+    this.setState({
+      aiResult: {
+        latency: 180 + Math.round(Math.random() * 90),
+        intent: 'create_watch_job',
+        trigger,
+        severity: this.severityLabel(severity),
+        severityColor: `color:${this.severityColor(severity)};`,
+        channel,
+        confidence: 91 + Math.round(Math.random() * 8)
+      }
+    });
+  };
+
+  buildCamera(id) {
+    const data = this.state.cameraData[id];
+    const evs = this.events.filter(e => e.cameraId === id);
+    const last = evs[0];
+    const jobs = data.jobLabels.map((label, idx) => {
+      const key = id + ':' + idx;
+      const on = this.state.jobToggles[key] !== false;
+      return {
+        label,
+        toggle: () => this.toggleJob(id, idx),
+        toggleStyle: `width:38px;height:22px;border-radius:999px;padding:2px;cursor:pointer;background:${on ? 'oklch(79.2% 0.209 151.711)' : 'oklch(26% 0.015 265)'};display:flex;align-items:center;justify-content:${on ? 'flex-end' : 'flex-start'};`,
+        knobStyle: 'width:18px;height:18px;border-radius:50%;background:white;'
+      };
+    });
+    return {
+      id, name: data.name, location: data.location,
+      slotId: 'cam-' + id,
+      slotIdMini: 'cam-mini-' + id,
+      pickBuilder: () => this.pickBuilderCamera(id),
+      filmStyle: `flex-shrink:0;background:oklch(12% 0.015 265);border-radius:12px;overflow:hidden;cursor:pointer;border:2px solid ${this.state.builderCamId === id ? 'oklch(85% 0.16 84)' : 'transparent'};`,
+      lastEventShort: last ? last.text : 'Nothing yet.',
+      dotStyle: this.camDotStyle(last ? last.severity : 'fine'),
+      jobs: jobs.map(j => ({ label: j.label, toggle: j.toggle, toggleStyle: j.toggleStyle, knobStyle: j.knobStyle })),
+      events: evs.map(e => ({ text: e.text, time: e.time, action: e.action, severityLabel: this.severityLabel(e.severity), pillStyle: this.pillStyle(e.severity), watch: () => this.openPlayback(id, e.id, 'camera-detail') })),
+      select: () => this.selectCamera(id),
+      pick: () => this.pickCamera(id),
+      pickStyle: this.pickStyleFor(this.state.pickedCameraId === id),
+      filmStyleDetail: `flex-shrink:0;background:oklch(12% 0.015 265);border-radius:12px;overflow:hidden;cursor:pointer;border:2px solid ${this.state.selectedCameraId === id ? 'oklch(85% 0.16 84)' : 'transparent'};`
+    };
+  }
+
+  pickStyleFor(active) {
+    return `font-size:13px;font-weight:600;padding:9px 16px;border-radius:10px;cursor:pointer;border:1px solid ${active ? 'oklch(85% 0.16 84)' : 'oklch(24% 0.015 265)'};color:${active ? 'oklch(90% 0.1 84)' : 'oklch(75% 0.01 265)'};background:${active ? 'oklch(24% 0.06 84)' : 'transparent'};`;
+  }
+
+  navItemStyleFor(active) {
+    return `display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer;color:${active ? 'oklch(96% 0.005 265)' : 'oklch(62% 0.01 265)'};background:${active ? 'oklch(19% 0.02 265)' : 'transparent'};`;
+  }
+
+  renderVals() {
+    const view = this.state.view;
+    const camIds = Object.keys(this.state.cameraData);
+    const cameras = camIds.map(id => this.buildCamera(id));
+    const selectedCamera = this.buildCamera(this.state.selectedCameraId);
+    const totalChecksToday = 214;
+    const camerasWatchingCount = cameras.length;
+
+    const recentEvents = this.events.slice(0, 3).map(e => ({
+      text: e.text, camera: e.camera, time: e.time,
+      severityLabel: this.severityLabel(e.severity), pillStyle: this.pillStyle(e.severity)
+    }));
+
+    const filteredRaw = this.state.activityFilter === 'all' ? this.events :
+      this.events.filter(e => (this.state.activityFilter === 'urgent' ? e.severity === 'urgent' : e.severity === 'note'));
+    const filteredEvents = filteredRaw.map(e => ({
+      text: e.text, camera: e.camera, time: e.time, action: e.action,
+      severityLabel: this.severityLabel(e.severity), pillStyle: this.pillStyle(e.severity),
+      watch: () => this.openPlayback(e.cameraId, e.id, 'activity')
+    }));
+
+    const activityFilters = [
+      { key: 'all', label: 'All' },
+      { key: 'note', label: 'Worth a look' },
+      { key: 'urgent', label: 'Urgent' }
+    ].map(f => ({
+      label: f.label, select: () => this.setState({ activityFilter: f.key }),
+      style: `font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;background:${this.state.activityFilter === f.key ? 'oklch(22% 0.02 265)' : 'transparent'};color:${this.state.activityFilter === f.key ? 'oklch(94% 0.005 265)' : 'oklch(60% 0.01 265)'};border:1px solid ${this.state.activityFilter === f.key ? 'oklch(30% 0.02 265)' : 'oklch(22% 0.015 265)'};`
+    }));
+
+    const nameToId = {};
+    camIds.forEach(id => { nameToId[this.state.cameraData[id].name] = id; });
+    const connectedSet = new Set(this.state.connections.map(c => this.connectionKey(c.a, c.b)));
+    const journeys = this.journeysData.map(j => ({
+      subject: j.subject,
+      severityLabel: this.severityLabel(j.severity),
+      pillStyle: this.pillStyle(j.severity),
+      summary: j.summary,
+      steps: j.steps.map((s, i) => {
+        let mapped = true;
+        if (i > 0) {
+          const prevId = nameToId[j.steps[i - 1].camera], curId = nameToId[s.camera];
+          mapped = prevId === curId || connectedSet.has(this.connectionKey(prevId, curId));
+        }
+        return { camera: s.camera, time: s.time, event: s.event, hasNext: i < j.steps.length - 1, arrowColor: mapped ? 'oklch(79.2% 0.209 151.711)' : 'oklch(82.8% 0.189 84.429)' };
+      })
+    }));
+    const chatList = this.state.chat;
+    const chatMessages = chatList.map(m => ({
+      rowStyle: `display:flex;justify-content:${m.role === 'user' ? 'flex-end' : 'flex-start'};`,
+      bubbleStyle: `max-width:80%;padding:10px 14px;border-radius:14px;font-size:13.5px;line-height:1.5;background:${m.role === 'user' ? 'oklch(30% 0.06 84)' : 'oklch(19% 0.015 265)'};color:${m.role === 'user' ? 'oklch(95% 0.03 84)' : 'oklch(88% 0.005 265)'};`,
+      text: m.text
+    }));
+
+    const digestDays = this.digestDays.map(d => ({
+      day: d.day, summary: d.summary, dotStyle: this.dotStyleFor(d.severity)
+    }));
+
+    const integrations = this.integrations.map(i => ({
+      name: i.name, status: i.status,
+      badgeStyle: `font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:${i.status === 'Connected' ? 'oklch(24% 0.06 155)' : 'oklch(20% 0.015 265)'};color:${i.status === 'Connected' ? 'oklch(80% 0.15 155)' : 'oklch(65% 0.01 265)'};`
+    }));
+
+    const adminView = this.state.adminView;
+    const adminStats = [
+      { value: '5', label: 'Active accounts' },
+      { value: '24', label: 'Cameras online' },
+      { value: '31', label: 'Watch jobs active' },
+      { value: '12', label: 'Alerts sent today' }
+    ];
+    const adminAccounts = this.adminAccountsData.map(a => ({
+      name: a.name, plan: a.plan, cameras: a.cameras, joined: a.joined, type: a.type, status: a.status,
+      dotStyle: `width:9px;height:9px;border-radius:50%;background:${a.status === 'Trial' ? 'oklch(82.8% 0.189 84.429)' : 'oklch(79.2% 0.209 151.711)'};`,
+      statusStyle: `font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:${a.status === 'Trial' ? 'oklch(24% 0.06 84)' : 'oklch(20% 0.06 155)'};color:${a.status === 'Trial' ? 'oklch(80% 0.15 84)' : 'oklch(80% 0.15 155)'};`
+    }));
+    const aiResult = this.state.aiResult;
+    const ad = this.state.agentDetail;
+    let agentDetail = null;
+    if (ad && ad.kind === 'job') {
+      const cam = this.buildCamera(ad.camId);
+      const job = cam.jobs[ad.idx];
+      const key = ad.camId + ':' + ad.idx;
+      agentDetail = {
+        open: true, title: job ? job.label : 'Agent', type: 'Single camera',
+        camNames: cam.name, channel: this.state.jobChannels[key] || 'Text message',
+        statusText: job && this.state.jobToggles[key] !== false ? 'Running' : 'Paused',
+        recentEvents: this.events.filter(e => e.cameraId === ad.camId).slice(0, 4)
+          .map(e => ({ text: e.text, camera: cam.name, time: e.time, severityLabel: this.severityLabel(e.severity), pillStyle: this.pillStyle(e.severity), camId: e.cameraId, eventId: e.id }))
+      };
+    } else if (ad && ad.kind === 'map') {
+      const a = this.state.mapAgents.find(x => x.id === ad.id);
+      if (a) {
+        agentDetail = {
+          open: true, title: a.name, type: 'Multi-camera',
+          camNames: a.camIds.map(id => this.state.cameraData[id].name).join(' \u2192 '),
+          channel: null, statusText: a.running ? 'Running' : 'Paused',
+          recentEvents: this.events.filter(e => a.camIds.includes(e.cameraId)).slice(0, 4)
+            .map(e => ({ text: e.text, camera: e.camera, time: e.time, severityLabel: this.severityLabel(e.severity), pillStyle: this.pillStyle(e.severity), camId: e.cameraId, eventId: e.id }))
+        };
+      }
+    }
+    if (agentDetail) {
+      agentDetail.recentEvents = agentDetail.recentEvents.map((e, i) => ({ ...e, slotId: 'agentdetail-' + (ad.kind === 'job' ? ad.camId + '-' + ad.idx : ad.id) + '-' + i, watch: () => this.openPlayback(e.camId, e.eventId, 'agent-detail') }));
+    }
+
+    let playback = null;
+    if (this.state.view === 'playback' && this.state.playbackCamId) {
+      const camId = this.state.playbackCamId;
+      const camAsc = this.events.filter(e => e.cameraId === camId).slice().reverse();
+      let idx = camAsc.findIndex(e => e.id === this.state.playbackEventId);
+      if (idx === -1) idx = camAsc.length - 1;
+      const cur = camAsc[idx];
+      playback = {
+        camName: this.state.cameraData[camId].name, slotId: 'cam-' + camId,
+        time: cur ? cur.time : '', text: cur ? cur.text : '', action: cur ? cur.action : '',
+        severityLabel: cur ? this.severityLabel(cur.severity) : '', pillStyle: cur ? this.pillStyle(cur.severity) : '',
+        prevDisabled: idx <= 0, nextDisabled: idx >= camAsc.length - 1,
+        prevClick: () => { if (idx > 0) this.setPlaybackEvent(camAsc[idx - 1].id); },
+        nextClick: () => { if (idx < camAsc.length - 1) this.setPlaybackEvent(camAsc[idx + 1].id); },
+        dots: camAsc.map((e, i) => ({
+          click: () => this.setPlaybackEvent(e.id),
+          style: `width:${i === idx ? 12 : 8}px;height:${i === idx ? 12 : 8}px;border-radius:50%;background:${this.severityColor(e.severity)};cursor:pointer;flex-shrink:0;opacity:${i === idx ? 1 : 0.55};`
+        }))
+      };
+    }
+
+    const builderCamera = this.buildCamera(this.state.builderCamId);
+
+    const agents = [];
+    camIds.forEach(camId => {
+      const data = this.state.cameraData[camId];
+      data.jobLabels.forEach((label, idx) => {
+        const key = camId + ':' + idx;
+        const running = this.state.jobToggles[key] !== false;
+        const channel = this.state.jobChannels[key] || 'Text message';
+        const isEditing = this.state.editingAgentKey === key;
+        agents.push({
+          key, camName: data.name, label,
+          statusText: running ? 'Running' : 'Paused',
+          channel,
+          cycleChannel: () => this.cycleChannel(key),
+          isEditing, isNotEditing: !isEditing,
+          editValue: isEditing ? this.state.editAgentValue : label,
+          onEditChange: this.onEditAgentChange, onEditKeyDown: this.onEditAgentKeyDown,
+          startEdit: () => this.startEditAgent(key, label),
+          saveEdit: this.saveEditAgent,
+          remove: () => this.removeAgent(camId, idx),
+          openDetail: () => this.openJobAgentDetail(camId, idx),
+          toggleRunning: () => this.toggleJob(camId, idx),
+          runToggleStyle: `width:38px;height:22px;border-radius:999px;padding:2px;cursor:pointer;flex-shrink:0;background:${running ? 'oklch(79.2% 0.209 151.711)' : 'oklch(26% 0.015 265)'};display:flex;align-items:center;justify-content:${running ? 'flex-end' : 'flex-start'};`,
+          runKnobStyle: 'width:18px;height:18px;border-radius:50%;background:white;'
+        });
+      });
+    });
+
+    return {
+      mode: this.state.mode, isAppMode: this.state.mode === 'app', isAdminMode: this.state.mode === 'admin',
+      enterAdmin: this.enterAdmin, exitAdmin: this.exitAdmin,
+      isAdminOverview: adminView === 'overview', isAdminAccounts: adminView === 'accounts', isAdminAI: adminView === 'ai', isAdminSystem: adminView === 'system',
+      goAdminOverview: () => this.setAdminView('overview'), goAdminAccounts: () => this.setAdminView('accounts'), goAdminAI: () => this.setAdminView('ai'), goAdminSystem: () => this.setAdminView('system'),
+      adminNavItemStyle: {
+        overview: this.navItemStyleFor(adminView === 'overview'),
+        accounts: this.navItemStyleFor(adminView === 'accounts'),
+        ai: this.navItemStyleFor(adminView === 'ai'),
+        system: this.navItemStyleFor(adminView === 'system')
+      },
+      adminStats, adminAccounts,
+      aiPresets: this.aiPresets.map(p => ({ text: p, use: () => this.useAiPreset(p) })),
+      aiInput: this.state.aiInput, onAiInputChange: this.onAiInputChange, onAiKeyDown: this.onAiKeyDown, runAiTest: this.runAiTest,
+      aiResultReady: !!aiResult, aiResult: aiResult || {},
+      systemServices: this.systemServicesData.map(s => ({ name: s.name, uptime: s.uptime, dotStyle: `width:8px;height:8px;border-radius:50%;background:${s.ok ? 'oklch(79.2% 0.209 151.711)' : 'oklch(70.4% 0.191 22.216)'};` })),
+      adminUsersTab: this.state.adminUsersTab,
+      isAdminUsersTab: this.state.adminUsersTab === 'users', isAdminOrgsTab: this.state.adminUsersTab === 'orgs',
+      usersTabStyle: `font-size:13px;font-weight:600;padding:9px 16px;border-radius:9px;cursor:pointer;background:${this.state.adminUsersTab === 'users' ? 'oklch(55% 0.15 235)' : 'oklch(18% 0.015 265)'};color:${this.state.adminUsersTab === 'users' ? 'white' : 'oklch(75% 0.01 265)'};`,
+      orgsTabStyle: `font-size:13px;font-weight:600;padding:9px 16px;border-radius:9px;cursor:pointer;background:${this.state.adminUsersTab === 'orgs' ? 'oklch(55% 0.15 235)' : 'oklch(18% 0.015 265)'};color:${this.state.adminUsersTab === 'orgs' ? 'white' : 'oklch(75% 0.01 265)'};`,
+      setAdminUsersTab: () => this.setAdminUsersTab('users'),
+      setAdminOrgsTab: () => this.setAdminUsersTab('orgs'),
+      showDeleted: this.state.showDeleted, toggleShowDeleted: this.toggleShowDeleted,
+
+      isHome: view === 'home', isCameras: view === 'cameras', isCameraDetail: view === 'camera-detail',
+      isChat: view === 'chat', isAgents: view === 'agents', isAgentDetail: view === 'agent-detail', isActivity: view === 'activity', isDigests: view === 'digests', isSettings: view === 'settings',
+      isPlayback: view === 'playback', playback: playback || {}, closePlayback: this.closePlayback,
+      builderCamera, builderTrigger: this.state.builderTrigger, onBuilderTriggerChange: this.onBuilderTriggerChange,
+      builderChannel: this.state.builderChannel, cycleBuilderChannel: this.cycleBuilderChannel, deployAgent: this.deployAgent, deployedFlash: this.state.deployedFlash,
+      goAgents: this.goAgents, agents, agentsEmpty: agents.length === 0,
+      journeys,
+      agentDetail: agentDetail || { open: false }, closeAgentDetail: this.closeAgentDetail, stopClick: this.stopClick,
+      goMap: this.goMap, isMap: view === 'map',
+      createMapAgent: this.createMapAgent,
+      mapAgentsEmpty: this.state.mapAgents.length === 0,
+      mapAgentsList: this.state.mapAgents.map(a => {
+        const editing = this.state.mapAgentEditingId === a.id;
+        return {
+          id: a.id, name: a.name, isEditing: editing, isNotEditing: !editing,
+          editValue: editing ? this.state.mapAgentEditValue : a.name,
+          onEditChange: this.onEditMapAgentChange, onEditKeyDown: this.onEditMapAgentKeyDown,
+          startEdit: () => this.startEditMapAgent(a.id, a.name), saveEdit: this.saveEditMapAgent,
+          camNames: a.camIds.map(id => this.state.cameraData[id].name).join(', '),
+          toggle: () => this.toggleMapAgent(a.id), remove: () => this.removeMapAgent(a.id),
+          openDetail: () => this.openMapAgentDetail(a.id),
+          toggleStyle: `width:38px;height:22px;border-radius:999px;padding:2px;cursor:pointer;flex-shrink:0;background:${a.running ? 'oklch(79.2% 0.209 151.711)' : 'oklch(26% 0.015 265)'};display:flex;align-items:center;justify-content:${a.running ? 'flex-end' : 'flex-start'};`,
+          knobStyle: 'width:18px;height:18px;border-radius:50%;background:white;'
+        };
+      }),
+      mapHint: this.state.mapSelectedNode ? `Click another camera to link with ${this.state.cameraData[this.state.mapSelectedNode].name}` : 'Click two cameras to connect them',
+      mapConnectionCount: this.state.connections.length,
+      mapNodes: camIds.map(id => {
+        const [x, y] = this.mapPositions[id];
+        const sel = this.state.mapSelectedNode === id;
+        return {
+          name: this.state.cameraData[id].name,
+          click: () => this.clickMapNode(id),
+          style: `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;color:${sel ? 'oklch(90% 0.1 84)' : 'oklch(85% 0.005 265)'};padding:10px;border-radius:14px;background:${sel ? 'oklch(24% 0.06 84)' : 'oklch(14% 0.015 265)'};border:1px solid ${sel ? 'oklch(60% 0.14 84)' : 'oklch(24% 0.015 265)'};box-shadow:${sel ? '0 0 0 4px oklch(60% 0.14 84 / 0.18)' : 'none'};`,
+          iconStyle: `width:30px;height:30px;border-radius:9px;background:${sel ? 'oklch(30% 0.08 84)' : 'oklch(19% 0.015 265)'};display:flex;align-items:center;justify-content:center;color:${sel ? 'oklch(90% 0.12 84)' : 'oklch(65% 0.01 265)'};`
+        };
+      }),
+      mapLines: this.state.connections.map(c => {
+        const [x1, y1] = this.mapPositions[c.a], [x2, y2] = this.mapPositions[c.b];
+        return {
+          x1, y1, x2, y2, midX: (x1 + x2) / 2, midY: (y1 + y2) / 2, stroke: 'oklch(38% 0.02 265)', label: c.label,
+          onLabelChange: (e) => this.editConnectionLabel(c.id, e.target.value),
+          remove: () => this.removeConnection(c.id)
+        };
+      }),
+      mapConnectionsEmpty: this.state.connections.length === 0,
+      mapChatInput: this.state.mapChatInput, onMapChatChange: this.onMapChatChange, onMapChatKeyDown: this.onMapChatKeyDown, sendMapChat: this.sendMapChat,
+      mapChatEmpty: this.state.mapChat.length === 0,
+      mapChatLatest: (() => { const agentMsgs = this.state.mapChat.filter(m => m.role === 'agent'); return agentMsgs.length ? agentMsgs[agentMsgs.length - 1].text : null; })(),
+      mapChatSuggestions: [
+        { text: 'Track anyone entering Front Door', use: () => this.useMapSuggestion('Track anyone entering Front Door') },
+        { text: 'Log a worker across the whole shift', use: () => this.useMapSuggestion('Log a worker across the whole shift') }
+      ],
+      toggleTracking: this.toggleTracking,
+      trackingStatusText: this.state.trackingEnabled ? 'Running' : 'Paused',
+      trackingToggleStyle: `width:38px;height:22px;border-radius:999px;padding:2px;cursor:pointer;flex-shrink:0;background:${this.state.trackingEnabled ? 'oklch(79.2% 0.209 151.711)' : 'oklch(26% 0.015 265)'};display:flex;align-items:center;justify-content:${this.state.trackingEnabled ? 'flex-end' : 'flex-start'};`,
+      trackingKnobStyle: 'width:18px;height:18px;border-radius:50%;background:white;',
+      pickEverywhere: this.pickEverywhere,
+      everywherePickStyle: this.pickStyleFor(this.state.pickedCameraId === 'everywhere'),
+      navItemStyle: {
+        home: this.navItemStyleFor(view === 'home'),
+        chat: this.navItemStyleFor(view === 'chat'),
+        cameras: this.navItemStyleFor(view === 'cameras' || view === 'camera-detail'),
+        agents: this.navItemStyleFor(view === 'agents' || view === 'agent-detail'),
+        map: this.navItemStyleFor(view === 'map'),
+        activity: this.navItemStyleFor(view === 'activity'),
+        digests: this.navItemStyleFor(view === 'digests'),
+        settings: this.navItemStyleFor(view === 'settings')
+      },
+      navStyleTag: 'display:none;',
+      goHome: this.goHome, goCameras: this.goCameras, goActivity: this.goActivity, goDigests: this.goDigests, goSettings: this.goSettings, goChat: this.goChat,
+      camerasWatchingCount, camerasTotalCount: cameras.length,
+      cameras, selectedCamera,
+      totalChecksToday, recentEvents,
+      filteredEvents, activityFilters,
+      chatEmpty: chatMessages.length === 0, chatNotEmpty: chatMessages.length > 0,
+      chatMessages,
+      chatInput: this.state.chatInput, onChatInputChange: this.onChatInputChange, onChatKeyDown: this.onChatKeyDown, sendChat: this.sendChat,
+      showCommandBar: view !== 'chat' && view !== 'settings',
+      onBarChatKeyDown: this.onBarChatKeyDown, sendBarChat: this.sendBarChat,
+      chatLatestReply: null,
+      commandBarStyle: `position:fixed;left:232px;right:${this.state.chatPanelOpen ? '400px' : '0px'};bottom:0;z-index:40;display:flex;flex-direction:column;align-items:center;gap:9px;padding:30px 24px 20px;background:linear-gradient(to top, oklch(9% 0.015 265 / 0.96) 55%, transparent);pointer-events:none;transition:right .32s cubic-bezier(.16,1,.3,1);`,
+      chatPanelOpen: this.state.chatPanelOpen, closeChatBarPanel: this.closeChatBarPanel,
+      chatColumnStyle: `flex-shrink:0;height:100%;overflow:hidden;border-left:1px solid oklch(24% 0.015 265);background:oklch(12% 0.015 265);transition:width .32s cubic-bezier(.16,1,.3,1);width:${this.state.chatPanelOpen ? '400px' : '0px'};`,
+      suggestions: this.suggestions.map(s => ({ text: s, use: () => this.useSuggestion(s) })),
+      askSuggestions: this.askSuggestionsData.map(s => ({ text: s, use: () => this.setState({ chatInput: s }) })),
+      digestDays,
+      contacts: this.contacts,
+      quietHoursToggleStyle: `width:40px;height:23px;border-radius:999px;padding:2px;cursor:pointer;background:${this.state.quietHours ? 'oklch(79.2% 0.209 151.711)' : 'oklch(26% 0.015 265)'};display:flex;align-items:center;justify-content:${this.state.quietHours ? 'flex-end' : 'flex-start'};`,
+      quietHoursKnobStyle: 'width:19px;height:19px;border-radius:50%;background:white;',
+      integrations
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -22,6 +22,8 @@ from app.api.admin import router as admin_router
 from app.api.settings import router as settings_router
 from app.api.test_camera import router as test_camera_router
 from app.api.agents import router as agents_router
+from app.api.camera_connections import router as camera_connections_router
+from app.api.fleet import router as fleet_router
 from app.api.digests import router as digests_router
 from app.api.chat import router as chat_router
 from app.api.devices import router as devices_router
@@ -30,6 +32,9 @@ from app.api.edge_credentials import router as edge_credentials_router
 from app.api.webrtc import router as webrtc_router
 from app.api.agent_control import router as agent_control_router
 from app.ws.events import router as ws_router
+from app.services.alert_escalation import run_escalation_sweep
+from app.services.fleet_health import run_fleet_health_sweep
+from app.services.retention import run_retention_sweep
 from app.services.digest.scheduler import (
     APSCHEDULER_AVAILABLE,
     schedule_all,
@@ -76,6 +81,41 @@ async def lifespan(app: FastAPI):
             if scheduler is not None:
                 await schedule_all(scheduler)
                 app.state.digest_scheduler = scheduler
+                # Escalation sweep. One minute is the resolution of the whole
+                # ladder — rung delays are in seconds but nothing escalates
+                # faster than the sweep runs, so sub-minute rungs would be a
+                # promise the scheduler cannot keep.
+                scheduler.add_job(
+                    run_escalation_sweep,
+                    "interval",
+                    minutes=1,
+                    id="alert_escalation_sweep",
+                    max_instances=1,       # never overlap with a slow previous run
+                    coalesce=True,         # a missed window runs once, not N times
+                )
+                # Fleet health / failover. Every minute so a dead appliance
+                # is noticed promptly; the 5-minute staleness threshold inside
+                # the sweep — not this interval — is what prevents flapping.
+                scheduler.add_job(
+                    run_fleet_health_sweep,
+                    "interval",
+                    minutes=1,
+                    id="fleet_health_sweep",
+                    max_instances=1,
+                    coalesce=True,
+                )
+                # Retention purge. Daily and off-peak: it deletes media and
+                # rows, so it should not compete with the evening digest run
+                # or with normal daytime traffic.
+                scheduler.add_job(
+                    run_retention_sweep,
+                    "cron",
+                    hour=3,
+                    minute=30,
+                    id="event_retention_sweep",
+                    max_instances=1,
+                    coalesce=True,
+                )
         except Exception:
             logger.exception("Failed to initialise digest scheduler")
     else:
@@ -127,6 +167,8 @@ app.include_router(admin_router)
 app.include_router(settings_router)
 app.include_router(test_camera_router)
 app.include_router(agents_router)
+app.include_router(fleet_router)
+app.include_router(camera_connections_router)
 app.include_router(digests_router)
 app.include_router(chat_router)
 app.include_router(devices_router)

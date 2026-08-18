@@ -37,6 +37,9 @@ var (
 	ErrBadOffer     = errors.New("set remote")
 	ErrCreateAnswer = errors.New("create answer failed")
 	ErrSetLocal     = errors.New("set local failed")
+	// ErrTooManySessions indicates this appliance is already serving its
+	// maximum number of concurrent live viewers.
+	ErrTooManySessions = errors.New("too many concurrent live-view sessions")
 )
 
 // HandleOffer builds a PeerConnection for cameraID, wires it to the
@@ -63,6 +66,26 @@ func (s *ViewerServer) HandleOffer(cameraID, viewToken string, offer webrtc.Sess
 	if !ok {
 		return webrtc.SessionDescription{}, ErrCameraNotFound
 	}
+
+	// Reserve a slot before building anything expensive. Acquired after auth
+	// so an unauthenticated caller cannot exhaust the cap.
+	if !s.acquireSession() {
+		return webrtc.SessionDescription{}, ErrTooManySessions
+	}
+	released := false
+	releaseOnce := func() {
+		if !released {
+			released = true
+			s.releaseSession()
+		}
+	}
+	// Any failure between here and handing the slot to viewerPump must give
+	// it back, or failed negotiations would leak capacity until restart.
+	defer func() {
+		if !released {
+			releaseOnce()
+		}
+	}()
 
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
@@ -116,7 +139,10 @@ func (s *ViewerServer) HandleOffer(cameraID, viewToken string, offer webrtc.Sess
 	}
 	<-gatherDone
 
-	go viewerPump(pc, videoTrack, pub)
+	// Ownership of the slot transfers to the pump; mark it handed off so the
+	// deferred cleanup above does not release it while the stream is live.
+	released = true
+	go viewerPump(pc, videoTrack, pub, s.releaseSession)
 
 	return *pc.LocalDescription(), nil
 }

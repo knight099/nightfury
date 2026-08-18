@@ -18,15 +18,19 @@ export default function EventsPage() {
   const [page, setPage] = useState(1);
   const [eventType, setEventType] = useState("");
   const [severity, setSeverity] = useState("");
+  // Defaults to "open" — a control room opens this page to see what still
+  // needs attention, not to browse everything that ever happened.
+  const [status, setStatus] = useState("open");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", page, eventType, severity],
+    queryKey: ["events", page, eventType, severity, status],
     queryFn: () =>
       api.getEvents({
         page: String(page),
         per_page: "20",
         ...(eventType && { event_type: eventType }),
         ...(severity && { severity }),
+        ...(status && { status }),
       }),
   });
 
@@ -34,9 +38,12 @@ export default function EventsPage() {
     (event: Event) => {
       const matchesType = !eventType || event.event_type === eventType;
       const matchesSeverity = !severity || event.severity === severity;
-      if (page === 1 && matchesType && matchesSeverity) {
+      // A newly-created event is always status "new", so it belongs in the
+      // list under "open" or "new" — but not under "resolved"/"dismissed".
+      const matchesStatus = !status || status === "open" || status === "new";
+      if (page === 1 && matchesType && matchesSeverity && matchesStatus) {
         queryClient.setQueryData<PaginatedResponse<Event>>(
-          ["events", page, eventType, severity],
+          ["events", page, eventType, severity, status],
           (old) => {
             const prevEvents = old?.events ?? [];
             if (prevEvents.some((e) => e.id === event.id)) return old;
@@ -53,10 +60,16 @@ export default function EventsPage() {
         queryClient.invalidateQueries({ queryKey: ["events"] });
       }
     },
-    [queryClient, page, eventType, severity]
+    [queryClient, page, eventType, severity, status]
   );
 
   useEventsSocket(handleNewEvent);
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status: next }: { id: string; status: string }) =>
+      api.setEventStatus(id, next),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["events"] }),
+  });
 
   const feedbackMutation = useMutation({
     mutationFn: ({ id, feedback }: { id: string; feedback: string }) =>
@@ -96,6 +109,18 @@ export default function EventsPage() {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
+        <select
+          value={status}
+          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-1.5 bg-[#1F1F1F] border border-[#2A2A2A] rounded-md text-sm text-[#F5F5F5]"
+        >
+          <option value="open">Open (needs attention)</option>
+          <option value="new">Unacknowledged</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="resolved">Resolved</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="">All statuses</option>
+        </select>
       </div>
 
       {/* Event List */}
@@ -129,7 +154,53 @@ export default function EventsPage() {
               <SeverityBadge severity={event.severity} />
               <div className="hidden md:block w-12 text-xs text-[#666666]">{(event.confidence * 100).toFixed(0)}%</div>
               <div className="basis-full sm:basis-auto sm:flex-1 text-xs text-[#A3A3A3] truncate order-last sm:order-none">{event.description}</div>
+              {/* Workflow lane — "did somebody deal with it?". Deliberately
+                  separate from the feedback lane below, which answers the
+                  different question of whether the DETECTION was right. */}
               <div className="flex items-center gap-1 ml-auto sm:ml-0">
+                {event.status === "new" ? (
+                  canFeedback ? (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        statusMutation.mutate({ id: event.id, status: "acknowledged" });
+                      }}
+                      className="px-2 py-1 rounded text-xs text-amber-400 border border-amber-400/40 hover:bg-amber-400/10 transition-colors"
+                      title="I am dealing with this — stops the escalation ladder"
+                    >
+                      Ack
+                    </button>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-xs text-amber-400 bg-amber-400/10">
+                      unacknowledged
+                    </span>
+                  )
+                ) : event.status === "acknowledged" ? (
+                  canFeedback ? (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        statusMutation.mutate({ id: event.id, status: "resolved" });
+                      }}
+                      className="px-2 py-1 rounded text-xs text-green-400 border border-green-400/40 hover:bg-green-400/10 transition-colors"
+                      title="Dealt with — closes this event"
+                    >
+                      Resolve
+                    </button>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-xs text-[#A3A3A3] bg-[#1A1A1A]">
+                      acknowledged
+                    </span>
+                  )
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs text-[#666666] bg-[#1A1A1A]">
+                    {event.status}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
                 {event.feedback ? (
                   <span className="text-xs text-[#666666] px-2 py-0.5 bg-[#1A1A1A] rounded">
                     {event.feedback}

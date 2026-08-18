@@ -18,6 +18,9 @@ import type {
   Site,
   User,
   WhatsAppAlertContact,
+  FleetResponse,
+  CameraConnection,
+  Journey,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -179,6 +182,18 @@ class ApiClient {
     return this.request<Event>(`/api/events/${id}`);
   }
 
+  /**
+   * Move an event through the control-room workflow. Separate from
+   * submitFeedback: that records whether the DETECTION was right, this records
+   * whether somebody DEALT WITH it.
+   */
+  async setEventStatus(id: string, status: string, note?: string) {
+    return this.request<Event>(`/api/events/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, note }),
+    });
+  }
+
   async submitFeedback(id: string, feedback: string, label?: string) {
     return this.request<{ status: string }>(`/api/events/${id}/feedback`, {
       method: "POST",
@@ -209,6 +224,55 @@ class ApiClient {
 
   async deleteSite(id: string) {
     return this.request<void>(`/api/sites/${id}`, { method: "DELETE" });
+  }
+
+  // ─── Camera map & journeys ───────────────────────────────────────────────
+
+  async getCameraConnections(siteId: string) {
+    return this.request<CameraConnection[]>(`/api/sites/${siteId}/camera-connections`);
+  }
+
+  async createCameraConnection(
+    siteId: string,
+    data: { camera_a_id: string; camera_b_id: string; label?: string }
+  ) {
+    return this.request<CameraConnection>(`/api/sites/${siteId}/camera-connections`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCameraConnection(siteId: string, connectionId: string, label: string | null) {
+    return this.request<CameraConnection>(
+      `/api/sites/${siteId}/camera-connections/${connectionId}`,
+      { method: "PATCH", body: JSON.stringify({ label }) }
+    );
+  }
+
+  async deleteCameraConnection(siteId: string, connectionId: string) {
+    return this.request<void>(
+      `/api/sites/${siteId}/camera-connections/${connectionId}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async getEventJourney(eventId: string, windowMinutes?: number) {
+    const qs = windowMinutes ? `?window_minutes=${windowMinutes}` : "";
+    return this.request<Journey>(`/api/events/${eventId}/journey${qs}`);
+  }
+
+  // ─── Fleet ───────────────────────────────────────────────────────────────
+
+  async getSiteFleet(siteId: string) {
+    return this.request<FleetResponse>(`/api/fleet/sites/${siteId}`);
+  }
+
+  /** Pin a camera to a specific appliance, or pass null to clear the pin. */
+  async pinCamera(cameraId: string, agentId: string | null) {
+    return this.request<FleetResponse>(`/api/fleet/cameras/${cameraId}/pin`, {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agentId }),
+    });
   }
 
   async restoreSite(id: string) {

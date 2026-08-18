@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,12 @@ from app.schemas.whatsapp_alerts import (
     CreateWhatsAppAlertContactRequest,
     UpdateWhatsAppAlertContactRequest,
     WhatsAppAlertContact,
+)
+from app.services.retention import (
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
+    SETTINGS_KEY as RETENTION_SETTINGS_KEY,
+    retention_days_for,
 )
 from app.services.soft_delete_service import soft_delete_service
 from app.services.whatsapp_alert_service import whatsapp_alert_service
@@ -337,3 +344,64 @@ async def delete_whatsapp_alert_contact(
         return await whatsapp_alert_service.delete_contact(org, contact_id, db)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+class RetentionRequest(BaseModel):
+    """Days to keep events and their media. None/0 = keep forever."""
+
+    retention_days: int | None = None
+
+
+@router.get("/org/retention")
+async def get_retention(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    org = await _get_org_or_404(db, user)
+    return {
+        "retention_days": retention_days_for(org),
+        "min_days": MIN_RETENTION_DAYS,
+        "max_days": MAX_RETENTION_DAYS,
+    }
+
+
+@router.put("/org/retention")
+async def set_retention(
+    body: RetentionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Set the event retention window.
+
+    A dedicated, validated endpoint rather than writing raw JSONB through
+    PATCH /org: this value causes irreversible deletion of a customer's
+    evidence, so an out-of-range typo must be rejected at the edge instead of
+    landing in settings and being discovered by the nightly purge.
+
+    It also merges into `settings` rather than replacing it, so setting
+    retention cannot clobber unrelated keys.
+    """
+    require_role(user, "owner")
+    org = await _get_org_or_404(db, user)
+
+    days = body.retention_days
+    if days is not None and days > 0 and not (MIN_RETENTION_DAYS <= days <= MAX_RETENTION_DAYS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"retention_days must be between {MIN_RETENTION_DAYS} and "
+                f"{MAX_RETENTION_DAYS}, or omitted to keep events forever"
+            ),
+        )
+
+    updated = dict(org.settings or {})
+    if days is None or days <= 0:
+        updated.pop(RETENTION_SETTINGS_KEY, None)
+    else:
+        updated[RETENTION_SETTINGS_KEY] = days
+    # Reassign rather than mutate: SQLAlchemy does not track in-place changes
+    # to a JSONB dict, so mutating org.settings would not be persisted.
+    org.settings = updated
+    await db.flush()
+
+    return {"retention_days": retention_days_for(org)}

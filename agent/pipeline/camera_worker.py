@@ -10,6 +10,7 @@ from models import CameraConfig
 from stream_ingest import StreamIngest
 from ring_buffer import RingBuffer
 from motion_detector import MotionDetector
+from footfall import FootfallCounter, lines_from_config
 from frame_sampler import FrameSampler
 from gemini_client import GeminiClient
 from event_packager import EventPackager
@@ -41,6 +42,10 @@ class CameraWorker:
         )
         self.gemini = gemini
         self.yolo = YoloDetector()
+        # Footfall runs off the YOLO person detections the gate already
+        # produces — no extra inference, so a camera with counting lines costs
+        # no more per frame than one without.
+        self.footfall = FootfallCounter(lines_from_config(camera_config.counting_lines))
         self.pose = PoseDetector()
         self.tracker = PersonTracker(
             iou_threshold=config.track_iou_threshold,
@@ -68,6 +73,14 @@ class CameraWorker:
         self.sequence_events = 0
         self.last_frame_time: float = 0
         self.errors: list[str] = []
+
+        # Analysis-time accounting. Feeds the agent's measured capacity: the
+        # fraction of wall-clock time this camera spends actually analysing is
+        # what tells us whether the box can take more cameras. Reset each time
+        # it is read, so each health round reports its own window rather than a
+        # lifetime average that stops responding to change.
+        self._analysis_seconds: float = 0.0
+        self._utilisation_window_start: float = time.time()
 
     async def start(self):
         """Start the camera processing pipeline."""
@@ -116,6 +129,11 @@ class CameraWorker:
                 if not self.frame_sampler.should_sample(frame, has_motion):
                     continue
 
+                # Everything past this point is the expensive part (pose, YOLO,
+                # Gemini escalation) — the part whose cost decides how many
+                # cameras fit on this box.
+                analysis_started = time.time()
+
                 if config.pose_enabled and self.pose.available and self.camera_config.step_sequence:
                     self.pose_calls += 1
                     poses = await asyncio.to_thread(self.pose.detect, frame)
@@ -148,6 +166,15 @@ class CameraWorker:
                             "frame; escalating to Gemini instead of dropping"
                         )
                     else:
+                        # Count crossings BEFORE decide() branches: the "drop"
+                        # path returns early, and footfall must still be
+                        # counted on a frame that produced no event.
+                        if self.footfall.lines:
+                            self.footfall.update(
+                                [d.bbox for d in yolo_detections if d.coco_class == "person"],
+                                time.time(),
+                            )
+
                         decision = decide(
                             yolo_detections, self.camera_config,
                             config.yolo_fastpath_confidence, config.yolo_escalate_floor,
@@ -155,6 +182,7 @@ class CameraWorker:
 
                         if decision.action == "drop":
                             self.yolo_gated_frames += 1
+                            self._record_analysis(analysis_started)
                             continue
 
                         if decision.action == "emit":
@@ -164,6 +192,7 @@ class CameraWorker:
                                 await self.packager.package_and_send(
                                     event, frame, self.ring_buffer, self.camera_config
                                 )
+                            self._record_analysis(analysis_started)
                             continue
 
                         # decision.action == "escalate" -> fall through to Gemini below
@@ -182,6 +211,8 @@ class CameraWorker:
                     await self.packager.package_and_send(
                         event, frame, self.ring_buffer, self.camera_config
                     )
+
+                self._record_analysis(analysis_started)
 
             except asyncio.CancelledError:
                 break
@@ -238,9 +269,18 @@ class CameraWorker:
             return None
         return buf.tobytes()
 
-    async def send_heartbeat(self):
-        """Send health metrics to the backend."""
-        metrics = {
+    def heartbeat_payload(self) -> dict:
+        """This camera's slice of the agent's batched heartbeat.
+
+        Returns the payload rather than posting it: the supervisor sends one
+        request per agent covering every camera. Posting per camera cost one
+        HTTP request and one row update per camera per round — at 400 cameras
+        that is ~13 requests/sec and ~13 writes/sec, permanently, just for
+        health reporting.
+        """
+        return {
+            "camera_id": self.camera_config.camera_id,
+            "status": "online" if self._running and self.stream.is_running else "error",
             "frames_processed": self.frames_processed,
             "events_detected": self.events_detected,
             "gemini_calls": self.gemini_calls,
@@ -252,9 +292,31 @@ class CameraWorker:
             "buffer_duration": self.ring_buffer.duration_seconds,
             "sampler_state": self.frame_sampler.state,
             "errors": self.errors[-5:],
+            # Drained here, so counts are reported exactly once and the
+            # heartbeat interval defines the bucket. A dropped heartbeat loses
+            # that bucket rather than double-counting the next one.
+            "footfall": self.footfall.drain() if self.footfall.lines else {},
         }
-        status = "online" if self._running and self.stream.is_running else "error"
-        await self.api.send_heartbeat(self.camera_config.camera_id, status, metrics)
+
+    def _record_analysis(self, started: float) -> None:
+        self._analysis_seconds += time.time() - started
+
+    def consume_utilisation(self) -> float:
+        """Fraction of wall time spent analysing since the last call.
+
+        Reading resets the window, so consecutive health rounds each report
+        their own interval. Values above 1.0 are possible and meaningful — the
+        pipeline offloads inference to threads, so a saturated box can spend
+        more analysis-seconds than wall-seconds.
+        """
+        now = time.time()
+        elapsed = now - self._utilisation_window_start
+        analysis = self._analysis_seconds
+        self._analysis_seconds = 0.0
+        self._utilisation_window_start = now
+        if elapsed <= 0:
+            return 0.0
+        return analysis / elapsed
 
     @property
     def last_frame(self) -> np.ndarray | None:

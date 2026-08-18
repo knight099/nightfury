@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.agent_control import SignalError, registry as control_registry
 from app.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import get_current_user, require_role, scope_to_sites
 from app.models.camera import Camera
 from app.models.chat_message import ChatMessage
 from app.models.organization import Organization
@@ -32,6 +32,7 @@ from app.schemas.camera import (
     WebRTCAnswerResponse,
     WebRTCOfferRequest,
 )
+from app.services.camera_placement import reconcile_site
 from app.services.digest.spend_tracker import SpendTracker
 from app.services.gcs import fetch_gcs_object, gcs_blob_updated_at, sign_gcs_url
 from app.services.sequence_compiler.deps import get_sequence_compiler_client, get_sequence_compiler_spend_tracker
@@ -78,7 +79,7 @@ def _camera_query(user: User, include_deleted: bool = False):
         q = q.where(Camera.deleted_at.is_(None))
     if user.role != "super_admin":
         q = q.where(Camera.org_id == user.org_id)
-    return q
+    return scope_to_sites(q, Camera.site_id, user)
 
 
 @router.get("", response_model=list[CameraResponse])
@@ -136,12 +137,20 @@ async def create_camera(
         enabled_events=body.enabled_events,
         detection_zones=body.detection_zones,
         step_sequence=body.step_sequence,
+        counting_lines=body.counting_lines,
         sensitivity=body.sensitivity,
         idle_fps=body.idle_fps,
         active_fps=body.active_fps,
     )
     db.add(camera)
     await db.flush()
+
+    # Place the new camera on an edge box. Without this it would keep
+    # agent_id NULL and — now that assignments are agent-scoped — be analysed
+    # by nobody. This endpoint is exactly the path that produced the NULL
+    # agent_ids the migration had to backfill.
+    await reconcile_site(db, camera.org_id, camera.site_id)
+    await db.refresh(camera)
 
     resp = CameraCreatedResponse(camera=CameraResponse.model_validate(camera))
     if stream_key:
@@ -204,6 +213,9 @@ async def delete_camera(
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
     await soft_delete_service.delete_camera(camera, db)
+    # Frees capacity on that agent — anything queued as unassigned at this
+    # site can now move in.
+    await reconcile_site(db, camera.org_id, camera.site_id)
 
 
 @router.post("/{camera_id}/restore", response_model=CameraResponse)
@@ -217,6 +229,9 @@ async def restore_camera(
     q = select(Camera).where(Camera.id == camera_id)
     if user.role != "super_admin":
         q = q.where(Camera.org_id == user.org_id)
+    # Restore builds its own query (it must see soft-deleted rows, which
+    # _camera_query excludes), so the site scope is applied explicitly here.
+    q = scope_to_sites(q, Camera.site_id, user)
     result = await db.execute(q)
     camera = result.scalar_one_or_none()
     if not camera:
@@ -439,7 +454,11 @@ async def compile_sequence(
     zone_names = [z.get("name") for z in (camera.detection_zones or [])]
     whatsapp_configured = bool(organization and organization.whatsapp_alert_contacts)
 
-    charged = await spend_tracker.try_charge(camera.org_id, APPROX_COST_PER_CALL_USD)
+    # Charged to the camera's site as well as the org, so one busy site
+    # cannot spend the whole estate's daily budget.
+    charged = await spend_tracker.try_charge(
+        camera.org_id, APPROX_COST_PER_CALL_USD, site_id=camera.site_id
+    )
     if not charged:
         reply = "Daily AI budget reached — build this manually, or try again tomorrow."
         _persist_sequence_compiler_message(

@@ -18,6 +18,12 @@ class Digest(Base):
         nullable=False,
         index=True,
     )
+    # NULL = an organisation-wide digest (the scheduled morning/evening runs).
+    # Set = this digest covers one site only, which is what makes digests
+    # available to site-restricted accounts at all.
+    site_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sites.id"), nullable=True, index=True
+    )
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     range_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     range_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
