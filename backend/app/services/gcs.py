@@ -151,3 +151,40 @@ def gcs_blob_updated_at(uri: str) -> Optional[datetime]:
     except Exception as exc:  # noqa: BLE001 — fail-soft by design
         logger.warning("gcs_blob_updated_at: failed for %r (%s)", uri, exc)
         return None
+
+
+def delete_gcs_object(uri: str) -> bool:
+    """Delete the object at a ``gs://`` URI. Returns True if it is gone.
+
+    Used by the retention sweep. Unlike the other helpers here this does NOT
+    fail soft into a falsy "nothing happened" — the caller keeps the event row
+    when this returns False so the next pass retries, and reporting a failed
+    delete as success would orphan the object with nothing left pointing at it.
+
+    An already-missing object counts as success: the desired end state (no
+    object) holds, and a delete that has to be idempotent across retries must
+    treat "not there" as done.
+    """
+    if not uri:
+        return True
+    if not uri.startswith("gs://"):
+        # Non-GCS URIs (data: fallbacks used in local dev) have no object to
+        # remove — nothing to do, and not an error.
+        return True
+
+    try:
+        path = uri[len("gs://"):]
+        bucket_name, _, object_name = path.partition("/")
+        if not bucket_name or not object_name:
+            logger.warning("delete_gcs_object: malformed URI %r", uri)
+            return False
+
+        client = _get_client()
+        blob = client.bucket(bucket_name).blob(object_name)
+        blob.delete()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        if "404" in str(exc) or "Not Found" in str(exc):
+            return True
+        logger.warning("delete_gcs_object: failed for %r (%s)", uri, exc)
+        return False
