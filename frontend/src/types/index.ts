@@ -354,3 +354,38 @@ export interface Journey {
   summary: string;
   steps: JourneyStep[];
 }
+
+// ─── Agentic camera setup ───────────────────────────────────────────────────
+
+export interface SetupProposal {
+  id: string;
+  camera_id: string;
+  status: "pending" | "proposed" | "needs_input" | "failed" | "approved" | "rejected";
+  scene_type: string | null;
+  scene_description: string | null;
+  confidence: number | null;
+  proposal: Record<string, unknown>;
+  /** Why the agent chose this. Shown verbatim — never summarised. */
+  rationale: string | null;
+  error: string | null;
+  approved_at: string | null;
+}
+
+export interface SetupReviewGroup {
+  scene_type: string;
+  label: string;
+  /** False for "needs your input" and for a group of one. */
+  bulk_approvable: boolean;
+  shared_config: Record<string, unknown>;
+  proposals: SetupProposal[];
+  differing: SetupProposal[];
+}
+
+export interface SetupRun {
+  id: string;
+  site_id: string;
+  status: string;
+  camera_count: number;
+  pending: number;
+  groups: SetupReviewGroup[];
+}
