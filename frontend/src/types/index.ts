@@ -389,3 +389,13 @@ export interface SetupRun {
   pending: number;
   groups: SetupReviewGroup[];
 }
+
+/** List-view shape for GET /api/sites/{site_id}/setup-runs — no groups. */
+export interface SetupRunSummary {
+  id: string;
+  site_id: string;
+  status: string;
+  camera_count: number;
+  pending: number;
+  created_at: string;
+}

@@ -22,6 +22,7 @@ import type {
   CameraConnection,
   Journey,
   SetupRun,
+  SetupRunSummary,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -583,6 +584,10 @@ class ApiClient {
 
   async getSetupRun(runId: string) {
     return this.request<SetupRun>(`/api/setup-runs/${runId}`);
+  }
+
+  async getSetupRuns(siteId: string) {
+    return this.request<SetupRunSummary[]>(`/api/sites/${siteId}/setup-runs`);
   }
 
   async approveSetupProposal(proposalId: string) {

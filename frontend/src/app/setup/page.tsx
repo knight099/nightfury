@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -31,6 +31,23 @@ export default function SetupPage() {
     queryFn: () => api.getCameras({ site_id: activeSiteId as string }),
     enabled: !!activeSiteId,
   });
+
+  // A run's proposals take ~3 minutes to arrive. If the operator refreshes
+  // mid-wait, `runId` (React state) is gone — without this, that run is
+  // orphaned: unreachable, and its rows stay `pending` forever. On load,
+  // adopt the most recent still-pending run for this site so the operator
+  // lands back where they were.
+  const { data: runSummaries } = useQuery({
+    queryKey: ["setup-runs", activeSiteId],
+    queryFn: () => api.getSetupRuns(activeSiteId as string),
+    enabled: !!activeSiteId && !runId,
+  });
+
+  useEffect(() => {
+    if (runId || !runSummaries?.length) return;
+    const resumable = runSummaries.find((r) => r.pending > 0);
+    if (resumable) setRunId(resumable.id);
+  }, [runId, runSummaries]);
 
   const { data: run } = useQuery({
     queryKey: ["setup-run", runId],

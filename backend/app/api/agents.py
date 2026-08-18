@@ -469,10 +469,30 @@ async def post_setup_result(
 
     reasons = validate_proposal(payload.proposal, payload.frame_width, payload.frame_height)
     row.proposal = payload.proposal
-    row.scene_type = payload.proposal.get("scene_type")
-    row.scene_description = payload.proposal.get("scene_description")
-    row.confidence = payload.proposal.get("confidence")
-    row.rationale = payload.proposal.get("rationale")
+    # The raw model reply goes into the JSONB `proposal` column verbatim,
+    # unchanged — that's the audit record. But the typed columns below are
+    # bounded/typed (scene_type is String(32), confidence is Float), and the
+    # Gemini call has no response schema, so a malformed reply (confidence as
+    # a string, an oversized scene_type, ...) must not raise at flush. We
+    # never coerce or repair a bad value into a valid one — that would be a
+    # silent correction of a proposal the model never actually justified.
+    # Instead we leave the column NULL and let `reasons`/`error` carry the
+    # explanation, so a malformed proposal becomes `needs_input`, not a 500.
+    scene_type = payload.proposal.get("scene_type")
+    row.scene_type = scene_type if isinstance(scene_type, str) and len(scene_type) <= 32 else None
+
+    scene_description = payload.proposal.get("scene_description")
+    row.scene_description = scene_description if isinstance(scene_description, str) else None
+
+    confidence = payload.proposal.get("confidence")
+    row.confidence = (
+        float(confidence)
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+        else None
+    )
+
+    rationale = payload.proposal.get("rationale")
+    row.rationale = rationale if isinstance(rationale, str) else None
 
     if reasons:
         # Never corrected — a corrected proposal is no longer the thing the

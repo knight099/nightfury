@@ -23,11 +23,16 @@ from app.schemas.camera_setup import (
     ReviewGroupResponse,
     SetupJob,
     SetupRunResponse,
+    SetupRunSummary,
     StartRunRequest,
 )
 from app.services.camera_setup.grouping import group_proposals
 
 router = APIRouter(prefix="/api", tags=["camera-setup"])
+
+# Cap the run history returned per site — this is a "resume where I left
+# off" list for one operator, not an audit log.
+MAX_RUNS_LISTED = 20
 
 
 async def _load_site(site_id: uuid.UUID, user: User, db: AsyncSession) -> Site:
@@ -79,6 +84,18 @@ async def start_setup_run(
     if not cameras:
         raise HTTPException(status_code=404, detail="No cameras found at this site")
 
+    requested_ids = set(body.camera_ids)
+    found_ids = {c.id for c in cameras}
+    missing = requested_ids - found_ids
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(missing)} of {len(requested_ids)} requested cameras were not "
+                "found at this site"
+            ),
+        )
+
     unplaced = [c.name for c in cameras if c.agent_id is None]
     if unplaced:
         # Without an agent there is nothing to observe the camera. Say so
@@ -118,6 +135,59 @@ async def start_setup_run(
         )
     await db.flush()
     return await _run_response(run, db)
+
+
+@router.get("/sites/{site_id}/setup-runs", response_model=list[SetupRunSummary])
+async def list_setup_runs(
+    site_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List this site's setup runs, newest first, so a page refresh can find
+    and resume one still in progress instead of orphaning it."""
+    site = await _load_site(site_id, user, db)
+
+    runs = list(
+        (
+            await db.execute(
+                select(SetupRun)
+                .where(SetupRun.site_id == site.id)
+                .order_by(SetupRun.created_at.desc())
+                .limit(MAX_RUNS_LISTED)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not runs:
+        return []
+
+    run_ids = [r.id for r in runs]
+    proposals = list(
+        (
+            await db.execute(
+                select(CameraSetupProposal).where(CameraSetupProposal.run_id.in_(run_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pending_by_run: dict[uuid.UUID, int] = {}
+    for p in proposals:
+        if p.status == "pending":
+            pending_by_run[p.run_id] = pending_by_run.get(p.run_id, 0) + 1
+
+    return [
+        SetupRunSummary(
+            id=r.id,
+            site_id=r.site_id,
+            status=r.status,
+            camera_count=r.camera_count,
+            pending=pending_by_run.get(r.id, 0),
+            created_at=r.created_at,
+        )
+        for r in runs
+    ]
 
 
 async def _run_response(run: SetupRun, db: AsyncSession) -> SetupRunResponse:
@@ -170,7 +240,20 @@ def _apply(camera: Camera, proposal: dict) -> None:
     """
     camera.enabled_events = list(proposal.get("enabled_events") or [])
     camera.sensitivity = proposal.get("sensitivity") or "medium"
-    camera.detection_zones = list(proposal.get("zones") or [])
+    # The agent-facing contract (prompt + validator) proposes zones shaped
+    # {"name", "polygon"}. The platform's canonical zone shape is
+    # {"name", "points"} — read by the pipeline's zone tagging
+    # (agent/pipeline/camera_worker.py::_zone_for_bbox, which does
+    # zone.get("points", [])) and by the frontend zone editor
+    # (frontend/src/components/cameras/ZonesEditor.tsx, which reads z.points).
+    # Translate here, at the point config is written, rather than renaming the
+    # key anywhere upstream — the agent's contract stays `polygon`.
+    camera.detection_zones = [
+        {**{k: v for k, v in z.items() if k not in ("name", "polygon")},
+         "name": z.get("name"), "points": z.get("polygon") or []}
+        for z in (proposal.get("zones") or [])
+        if isinstance(z, dict)
+    ]
     camera.counting_lines = list(proposal.get("counting_lines") or [])
 
 

@@ -63,6 +63,18 @@ class SetupRunResponse(BaseModel):
     groups: list[ReviewGroupResponse] = []
 
 
+class SetupRunSummary(BaseModel):
+    """A run's list-view shape — no groups, so a refresh can cheaply find a
+    run to resume without pulling every proposal for every run."""
+
+    id: uuid.UUID
+    site_id: uuid.UUID
+    status: str
+    camera_count: int
+    pending: int = 0
+    created_at: datetime
+
+
 class StartRunRequest(BaseModel):
     # Explicit camera list, never "the whole site" — the operator chooses the
     # batch so they can learn from the first one.
