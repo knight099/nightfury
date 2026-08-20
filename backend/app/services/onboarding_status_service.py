@@ -64,9 +64,13 @@ class OnboardingStatusService:
         raw_discovered = await redis.get(_discovery_key(agent.id))
         discovered_count = 0
         if raw_discovered:
+            # push_discovered (agents.py) writes json.dumps(devices) — a bare
+            # JSON array, not {"devices": [...]}. Parse that shape exactly;
+            # there is exactly one writer, so don't add tolerance for a
+            # second shape that doesn't exist.
             try:
-                discovered_count = len(json.loads(raw_discovered).get("devices", []))
-            except (ValueError, AttributeError):
+                discovered_count = len(json.loads(raw_discovered))
+            except (ValueError, TypeError):
                 discovered_count = 0
 
         walk_passed = bool(await redis.get(_walk_test_key(agent.id)))
