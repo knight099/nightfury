@@ -29,6 +29,7 @@ type Client struct {
 	backendURL  string
 	deviceToken string
 	viewer      *webrtcsignal.ViewerServer
+	scan        scanState
 }
 
 // NewClient builds a control Client. backendURL is the plain http(s)
@@ -110,10 +111,19 @@ func (c *Client) runOnce(ctx context.Context) error {
 		if err := conn.ReadJSON(&msg); err != nil {
 			return err
 		}
-		if msg["type"] != "signal_offer" {
+		switch msg["type"] {
+		case "signal_offer":
+			go c.handleOffer(conn, &writeMu, msg)
+		case "scan_now":
+			// Fire-and-forget: no reply is expected or sent on this
+			// socket. Runs in its own goroutine, guarded by c.scan's
+			// mutex+cooldown, so it never blocks this read loop and a
+			// burst of scan_now messages never overlaps into concurrent
+			// ONVIF probes.
+			go c.scan.handleScanNow(ctx, c.backendURL, c.deviceToken)
+		default:
 			continue
 		}
-		go c.handleOffer(conn, &writeMu, msg)
 	}
 }
 

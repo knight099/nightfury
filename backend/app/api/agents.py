@@ -7,6 +7,7 @@ Endpoints:
 - GET  /api/agents/{agent_id}              (auth)   -> agent detail incl. cameras_streaming
 - POST /api/agents/me/discovered           (agent)  -> agent pushes LAN ONVIF discovery results
 - POST /api/agents/{agent_id}/discover     (auth)   -> read the agent's latest discovery results
+- POST /api/agents/{agent_id}/scan         (auth)   -> ask a paired box to run ONVIF discovery now
 - POST /api/agents/{agent_id}/cameras      (auth)   -> register a camera bound to the agent
 - GET  /api/agents/me/resolve-jobs         (agent)  -> drain pending ONVIF GetStreamUri jobs
 - POST /api/agents/me/resolve-jobs/{id}    (agent)  -> agent reports resolved RTSP URL
@@ -21,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.agent_control import registry
 from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_agent_from_token, get_current_user, scope_to_sites
@@ -221,6 +223,29 @@ async def get_onboarding_status(
     for cam in payload["cameras"]:
         cam["snapshot_url"] = await signed_latest_frame_url(cam["camera_id"])
     return OnboardingStatusResponse(**payload)
+
+
+@router.post("/{agent_id}/scan", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_scan(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ask a paired box to run ONVIF discovery right now.
+
+    202, not 200: the scan has been asked for, not completed. Results arrive
+    asynchronously at POST /api/agents/me/discovered and surface through the
+    onboarding-status endpoint.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    try:
+        await registry.send_command(agent.id, {"type": "scan_now"})
+    except ConnectionError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The box is not connected right now. Check its power and network.",
+        )
+    return {"status": "scanning"}
 
 
 DISCOVERY_TTL_SECONDS = 600
