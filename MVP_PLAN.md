@@ -1,5 +1,11 @@
 # NIGHTWATCH — Cloud SaaS MVP Plan
 
+> **Historical document.** Written before the edge-detection rearchitecture
+> (Aug 2026), when the relay + cloud worker was the primary camera path and
+> `super_admin` was identified by a null `org_id`. Both are now wrong. Kept for
+> the original scope, cost modelling, and rationale. **`CLAUDE.md` / `AGENTS.md`
+> are authoritative on current architecture and status.**
+
 ---
 
 | Field | Value |
