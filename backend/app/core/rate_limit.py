@@ -75,6 +75,11 @@ _ROUTE_RULES: list[tuple[str, str, int, int, str]] = [
     ("POST", "/api/auth/login", 10, 60, "ip"),
     ("POST", "/api/auth/signup", 5, 3600, "ip"),
     ("POST", "/api/agents/pair", 20, 3600, "ip"),
+    # The six-digit code space (and claim_token guesses) is only meaningful
+    # if the endpoint can't be walked — rate-limit by IP, not by bearer
+    # token, since a script could rotate/omit auth but not source IP as
+    # easily.
+    ("POST", "/api/devices/claim", 10, 60, "ip"),
 ]
 
 # Catch-all for authenticated API traffic.

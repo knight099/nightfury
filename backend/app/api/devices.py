@@ -39,18 +39,24 @@ async def provision_device(
 ) -> ProvisionResponse:
     """Called by the device at boot to register its pairing code."""
     svc = DeviceProvisionService(db)
-    prov = await svc.provision(
-        device_id=payload.device_id,
-        code=payload.code,
-        pubkey=payload.pubkey,
-        machine_id=payload.machine_id,
-        version=payload.version,
-    )
+    try:
+        prov, claim_token = await svc.provision(
+            device_id=payload.device_id,
+            code=payload.code,
+            pubkey=payload.pubkey,
+            machine_id=payload.machine_id,
+            version=payload.version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    claim_url = f"{settings.app_public_url.rstrip('/')}/cameras/connect?claim={claim_token}"
     return ProvisionResponse(
         device_id=prov.device_id,
         code=f"NW-{prov.code}",
         status=prov.status,
         expires_at=prov.expires_at,
+        claim_url=claim_url,
     )
 
 
@@ -102,11 +108,16 @@ async def claim_device(
             detail="user has no org assigned",
         )
 
-    code = payload.code.upper().removeprefix("NW-").strip()
-
     svc = DeviceProvisionService(db)
     try:
-        prov = await svc.claim(code, org_id, settings.relay_public_url)
+        if payload.claim_token is not None:
+            # Opaque lookup handle from the QR — never the device_token.
+            prov = await svc.claim_by_token(
+                payload.claim_token, org_id, settings.relay_public_url
+            )
+        else:
+            code = payload.code.upper().removeprefix("NW-").strip()
+            prov = await svc.claim(code, org_id, settings.relay_public_url)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
