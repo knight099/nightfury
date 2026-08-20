@@ -10,41 +10,27 @@ import (
 	"time"
 )
 
-// reportChannel mirrors the backend's DiscoveredChannel schema.
-//
-// Deliberately carries no stream URI: a resolved ONVIF stream URI embeds
-// the NVR username/password (see withCredentials), and this struct is
-// marshalled into a request that the backend later re-serves, verbatim, to
-// the browser via GET /{agent_id}/discover. Only the profile token — an
-// opaque channel identifier — crosses that boundary.
-type reportChannel struct {
-	ProfileToken string `json:"profile_token"`
-}
-
 // reportDevice mirrors the backend's DiscoveredDevice schema.
 type reportDevice struct {
-	UUID     string          `json:"uuid"`
-	Name     string          `json:"name"`
-	XAddr    string          `json:"xaddr"`
-	Channels []reportChannel `json:"channels,omitempty"`
+	UUID  string `json:"uuid"`
+	Name  string `json:"name"`
+	XAddr string `json:"xaddr"`
 }
 
 type reportPayload struct {
 	Devices []reportDevice `json:"devices"`
 }
 
-// postDiscovered POSTs a discovery payload (devices, optionally with
-// enumerated channels) to the backend. Shared by Report (periodic
-// WS-Discovery sweep) and ReportChannels (one-shot NVR channel
-// enumeration) so there is exactly one place that knows the wire format
-// and auth header for this endpoint.
-func postDiscovered(ctx context.Context, client *http.Client, backendURL, deviceToken string, payload reportPayload) error {
+// postJSON marshals payload, POSTs it to backendURL+path with the device
+// token, and treats any non-2xx response as an error. Shared by every
+// agent-authenticated push in this file.
+func postJSON(ctx context.Context, client *http.Client, backendURL, deviceToken, path string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, backendURL+"/api/agents/me/discovered", bytes.NewReader(body),
+		ctx, http.MethodPost, backendURL+path, bytes.NewReader(body),
 	)
 	if err != nil {
 		return err
@@ -58,7 +44,7 @@ func postDiscovered(ctx context.Context, client *http.Client, backendURL, device
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("discovery report rejected: %s", resp.Status)
+		return fmt.Errorf("POST %s rejected: %s", path, resp.Status)
 	}
 	return nil
 }
@@ -72,24 +58,42 @@ func Report(ctx context.Context, client *http.Client, backendURL, deviceToken st
 			UUID: d.UUID, Name: d.Name, XAddr: d.XAddr,
 		})
 	}
-	return postDiscovered(ctx, client, backendURL, deviceToken, payload)
+	return postJSON(ctx, client, backendURL, deviceToken, "/api/agents/me/discovered", payload)
+}
+
+// reportChannel mirrors the backend's DiscoveredChannel schema.
+//
+// Deliberately carries no stream URI: a resolved ONVIF stream URI embeds
+// the NVR username/password (see withCredentials), and this struct is
+// marshalled into a request that the backend later re-serves, verbatim, to
+// the browser via GET /{agent_id}/channels. Only the profile token — an
+// opaque channel identifier — crosses that boundary.
+type reportChannel struct {
+	ProfileToken string `json:"profile_token"`
+}
+
+// channelsPayload mirrors the backend's ChannelsPushRequest schema.
+type channelsPayload struct {
+	XAddr    string          `json:"xaddr"`
+	Channels []reportChannel `json:"channels"`
 }
 
 // ReportChannels uploads the channels enumerated from a single NVR (found
-// via ResolveAllStreamURIs) as one discovered device. xaddr is used as the
-// device identity (there's no WS-Discovery UUID for a device the user
-// pointed us at manually via credentials).
+// via ResolveAllStreamURIs) to their own endpoint/key
+// (POST /api/agents/me/channels), NOT the WS-Discovery snapshot endpoint.
+// The discovery snapshot at /me/discovered is whole-snapshot-replaced by
+// both the periodic sweep (RunReporter, ~every 60s) and scan_now, so a
+// channel list posted through it would be silently wiped by the next
+// sweep; posting there also required synthesizing a fake "device" entry
+// for the NVR, which this endpoint has no need to do since it isn't a
+// device list.
 func ReportChannels(ctx context.Context, client *http.Client, backendURL, deviceToken, xaddr string, channels []Channel) error {
 	rc := make([]reportChannel, 0, len(channels))
 	for _, c := range channels {
 		rc = append(rc, reportChannel{ProfileToken: c.ProfileToken})
 	}
-	payload := reportPayload{
-		Devices: []reportDevice{
-			{UUID: xaddr, Name: "NVR", XAddr: xaddr, Channels: rc},
-		},
-	}
-	return postDiscovered(ctx, client, backendURL, deviceToken, payload)
+	payload := channelsPayload{XAddr: xaddr, Channels: rc}
+	return postJSON(ctx, client, backendURL, deviceToken, "/api/agents/me/channels", payload)
 }
 
 // RunReporter discovers ONVIF devices on the LAN and reports them to the

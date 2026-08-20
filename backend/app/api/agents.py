@@ -10,6 +10,8 @@ Endpoints:
 - POST /api/agents/{agent_id}/scan         (auth)   -> ask a paired box to run ONVIF discovery now
 - POST /api/agents/{agent_id}/nvr-channels (auth)   -> enumerate an NVR's channels from one credential prompt
 - GET  /api/agents/me/nvr-credentials      (agent)  -> delete-on-read fetch of the NVR creds for that job
+- POST /api/agents/me/channels             (agent)  -> agent pushes enumerated NVR channels (own key, not merged into discovery)
+- GET  /api/agents/{agent_id}/channels     (auth)   -> read the agent's latest enumerated NVR channels
 - POST /api/agents/{agent_id}/cameras      (auth)   -> register a camera bound to the agent
 - GET  /api/agents/me/resolve-jobs         (agent)  -> drain pending ONVIF GetStreamUri jobs
 - POST /api/agents/me/resolve-jobs/{id}    (agent)  -> agent reports resolved RTSP URL
@@ -20,7 +22,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +41,8 @@ from app.schemas.agent import (
     AgentDetailResponse,
     AgentListResponse,
     AgentSummary,
+    ChannelsPushRequest,
+    ChannelsResponse,
     DiscoveredDevice,
     DiscoverPushRequest,
     DiscoverResponse,
@@ -297,11 +301,21 @@ async def resolve_nvr_channels(
             status_code=status.HTTP_409_CONFLICT,
             detail="The box is not connected right now.",
         )
+    except BaseException:
+        # Anything else — including asyncio.CancelledError from a client
+        # that disconnects mid-await, which is NOT an Exception subclass
+        # and would otherwise sail past a plain `except ConnectionError`
+        # and leave the password sitting in Redis for the rest of the TTL.
+        # The non-negotiable is "a TTL on every error path", not just the
+        # one error path we happened to anticipate.
+        await redis.delete(key)
+        raise
     return {"status": "resolving"}
 
 
 @router.get("/me/nvr-credentials", response_model=NvrCredentialsResponse)
 async def get_nvr_credentials(
+    response: Response,
     agent: Agent = Depends(get_agent_from_token),
 ) -> NvrCredentialsResponse:
     """Delete-on-read fetch of the NVR credentials staged for this agent.
@@ -312,7 +326,15 @@ async def get_nvr_credentials(
     password must not still be sitting in Redis for the remainder of the
     TTL window. A second fetch (retry, duplicate poll, crash-and-restart)
     finds nothing and gets 404, never a stale copy of the password.
+
+    ``Cache-Control: no-store`` (+ legacy ``Pragma: no-cache``) because this
+    is the one endpoint in the system that returns a customer's plaintext
+    credential over a 200 GET — a response shape that's heuristically
+    cacheable by an intermediary proxy with no explicit directive telling
+    it not to.
     """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     redis = await get_redis()
     key = _nvr_creds_key(agent.id)
     raw = await redis.getdel(key)
@@ -320,6 +342,55 @@ async def get_nvr_credentials(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no pending credentials")
     data = json.loads(raw)
     return NvrCredentialsResponse(**data)
+
+
+CHANNELS_TTL_SECONDS = 600
+
+
+def _channels_key(agent_id: uuid.UUID) -> str:
+    return f"agent:channels:{agent_id}"
+
+
+@router.post("/me/channels", status_code=status.HTTP_204_NO_CONTENT)
+async def push_channels(
+    payload: ChannelsPushRequest,
+    agent: Agent = Depends(get_agent_from_token),
+) -> None:
+    """Agent-authenticated push of enumerated NVR channels.
+
+    Own Redis key (``agent:channels:{agent_id}``), deliberately separate
+    from the WS-Discovery snapshot at ``_discovery_key`` /
+    ``POST /me/discovered``. That endpoint does a whole-snapshot ``SET``
+    and is written by both the periodic discovery sweep (~every 60s) and
+    on-demand ``scan_now`` — posting channels there would have the very
+    next sweep silently wipe the channel list the wizard is showing.
+    """
+    r = await get_redis()
+    await r.set(
+        _channels_key(agent.id),
+        ChannelsResponse(xaddr=payload.xaddr, channels=payload.channels).model_dump_json(),
+        ex=CHANNELS_TTL_SECONDS,
+    )
+
+
+@router.get("/{agent_id}/channels", response_model=ChannelsResponse)
+async def get_channels(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ChannelsResponse:
+    """Return the agent's most recently enumerated NVR channels.
+
+    Served from the Redis snapshot pushed by ``POST /me/channels``. Empty
+    list means nothing enumerated yet (or the entry expired) — the wizard
+    then falls back to prompting for credentials again.
+    """
+    await _load_agent_for_user(agent_id, user, db)
+    r = await get_redis()
+    raw = await r.get(_channels_key(agent_id))
+    if not raw:
+        return ChannelsResponse(xaddr=None, channels=[])
+    return ChannelsResponse(**json.loads(raw))
 
 
 DISCOVERY_TTL_SECONDS = 600

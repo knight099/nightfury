@@ -100,13 +100,36 @@ class DiscoveredDevice(BaseModel):
     uuid: str = Field(..., max_length=256)
     name: str = "unknown"
     xaddr: str = Field(..., max_length=512)
-    channels: list[DiscoveredChannel] = Field(default_factory=list, max_length=256)
 
 
 class DiscoverPushRequest(BaseModel):
     """Body of the agent-authenticated push of discovery results."""
 
     devices: list[DiscoveredDevice] = Field(default_factory=list, max_length=64)
+
+
+class ChannelsPushRequest(BaseModel):
+    """Body of the agent-authenticated push of enumerated NVR channels.
+
+    Deliberately a SEPARATE endpoint/key from discovery results
+    (``DiscoverPushRequest`` / ``POST /me/discovered``): that endpoint does
+    a whole-snapshot ``SET``, and both the periodic WS-Discovery sweep
+    (every ~60s) and an on-demand ``scan_now`` write through it. Posting
+    channels there would have the next sweep silently wipe the channel list
+    the wizard is showing — a real replace-race the caller must not have to
+    reason about. Channels get their own key instead.
+    """
+
+    xaddr: str = Field(..., max_length=512)
+    channels: list[DiscoveredChannel] = Field(default_factory=list, max_length=256)
+
+
+class ChannelsResponse(BaseModel):
+    """Body of GET /{agent_id}/channels — the customer-facing read side of
+    ChannelsPushRequest."""
+
+    xaddr: str | None = None
+    channels: list[DiscoveredChannel] = Field(default_factory=list)
 
 
 class DiscoverResponse(BaseModel):
@@ -172,7 +195,14 @@ class NvrChannelsRequest(BaseModel):
 
     xaddr: str = Field(..., max_length=512)
     username: str = Field(..., max_length=256)
-    password: SecretStr = Field(..., max_length=256)
+    # No max_length here, deliberately: a length-constraint failure on a
+    # SecretStr field is evaluated BEFORE the value is wrapped in SecretStr,
+    # so Pydantic's ValidationError carries the raw plaintext in `input`,
+    # and FastAPI's default 422 handler echoes that verbatim into the
+    # response body — an over-long password would be reflected straight
+    # into proxy/APM logs. Leaving the field unbounded avoids ever
+    # generating that error in the first place.
+    password: SecretStr = Field(...)
 
 
 class ResolveResultRequest(BaseModel):

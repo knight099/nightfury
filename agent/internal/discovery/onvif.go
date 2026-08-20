@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -371,6 +372,15 @@ type Channel struct {
 // ResolveStreamURI it deliberately discards the resolved URI (which would
 // carry the NVR credentials) and returns only the profile token per
 // channel.
+//
+// A per-profile GetStreamUri failure does NOT abort the whole call: it is
+// common for a multi-channel NVR to have media profiles for channels with
+// no camera attached, or a disabled substream. Such profiles are skipped
+// (logged at profile-token + SOAP-fault-code granularity, never with the
+// password) and every profile that DID resolve is still returned. Only a
+// GetProfiles failure, or every single profile failing GetStreamUri, is
+// reported as an error — a customer with a 16-channel NVR and one dead
+// channel must still see the 15 working ones.
 func ResolveAllStreamURIs(ctx context.Context, xaddr, username, password string) ([]Channel, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -398,6 +408,8 @@ func ResolveAllStreamURIs(ctx context.Context, xaddr, username, password string)
 		// Re-sign per request: nonces/timestamps must be fresh.
 		security, err = wsSecurityHeader(username, password)
 		if err != nil {
+			// Only a local nonce/random-read failure, not an ONVIF fault —
+			// not worth continuing the loop over.
 			return nil, err
 		}
 		streamBody := fmt.Sprintf(
@@ -409,14 +421,20 @@ func ResolveAllStreamURIs(ctx context.Context, xaddr, username, password string)
   <trt:ProfileToken>%s</trt:ProfileToken>
 </trt:GetStreamUri>`, mediaNS, token,
 		)
-		resp, err = postSOAP(ctx, client, xaddr, getStreamURIAct, security, streamBody)
-		if err != nil {
-			return nil, fmt.Errorf("GetStreamUri: %w", err)
+		streamResp, serr := postSOAP(ctx, client, xaddr, getStreamURIAct, security, streamBody)
+		if serr != nil {
+			slog.Warn("nvr channel skipped: GetStreamUri failed",
+				"profile_token", token, "fault_code", FaultCode(serr))
+			continue
 		}
-		if _, err := parseStreamURI(resp); err != nil {
-			return nil, fmt.Errorf("GetStreamUri: %w", err)
+		if _, perr := parseStreamURI(streamResp); perr != nil {
+			slog.Warn("nvr channel skipped: no stream uri in response", "profile_token", token)
+			continue
 		}
 		channels = append(channels, Channel{ProfileToken: token})
+	}
+	if len(channels) == 0 {
+		return nil, errors.New("no profile resolved a stream uri")
 	}
 	return channels, nil
 }
