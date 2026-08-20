@@ -10,26 +10,35 @@ import (
 	"time"
 )
 
+// reportChannel mirrors the backend's DiscoveredChannel schema.
+//
+// Deliberately carries no stream URI: a resolved ONVIF stream URI embeds
+// the NVR username/password (see withCredentials), and this struct is
+// marshalled into a request that the backend later re-serves, verbatim, to
+// the browser via GET /{agent_id}/discover. Only the profile token — an
+// opaque channel identifier — crosses that boundary.
+type reportChannel struct {
+	ProfileToken string `json:"profile_token"`
+}
+
 // reportDevice mirrors the backend's DiscoveredDevice schema.
 type reportDevice struct {
-	UUID  string `json:"uuid"`
-	Name  string `json:"name"`
-	XAddr string `json:"xaddr"`
+	UUID     string          `json:"uuid"`
+	Name     string          `json:"name"`
+	XAddr    string          `json:"xaddr"`
+	Channels []reportChannel `json:"channels,omitempty"`
 }
 
 type reportPayload struct {
 	Devices []reportDevice `json:"devices"`
 }
 
-// Report uploads discovery results to the backend so the dashboard's
-// onboarding wizard can list cameras found on this LAN.
-func Report(ctx context.Context, client *http.Client, backendURL, deviceToken string, devs []Device) error {
-	payload := reportPayload{Devices: make([]reportDevice, 0, len(devs))}
-	for _, d := range devs {
-		payload.Devices = append(payload.Devices, reportDevice{
-			UUID: d.UUID, Name: d.Name, XAddr: d.XAddr,
-		})
-	}
+// postDiscovered POSTs a discovery payload (devices, optionally with
+// enumerated channels) to the backend. Shared by Report (periodic
+// WS-Discovery sweep) and ReportChannels (one-shot NVR channel
+// enumeration) so there is exactly one place that knows the wire format
+// and auth header for this endpoint.
+func postDiscovered(ctx context.Context, client *http.Client, backendURL, deviceToken string, payload reportPayload) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -52,6 +61,35 @@ func Report(ctx context.Context, client *http.Client, backendURL, deviceToken st
 		return fmt.Errorf("discovery report rejected: %s", resp.Status)
 	}
 	return nil
+}
+
+// Report uploads discovery results to the backend so the dashboard's
+// onboarding wizard can list cameras found on this LAN.
+func Report(ctx context.Context, client *http.Client, backendURL, deviceToken string, devs []Device) error {
+	payload := reportPayload{Devices: make([]reportDevice, 0, len(devs))}
+	for _, d := range devs {
+		payload.Devices = append(payload.Devices, reportDevice{
+			UUID: d.UUID, Name: d.Name, XAddr: d.XAddr,
+		})
+	}
+	return postDiscovered(ctx, client, backendURL, deviceToken, payload)
+}
+
+// ReportChannels uploads the channels enumerated from a single NVR (found
+// via ResolveAllStreamURIs) as one discovered device. xaddr is used as the
+// device identity (there's no WS-Discovery UUID for a device the user
+// pointed us at manually via credentials).
+func ReportChannels(ctx context.Context, client *http.Client, backendURL, deviceToken, xaddr string, channels []Channel) error {
+	rc := make([]reportChannel, 0, len(channels))
+	for _, c := range channels {
+		rc = append(rc, reportChannel{ProfileToken: c.ProfileToken})
+	}
+	payload := reportPayload{
+		Devices: []reportDevice{
+			{UUID: xaddr, Name: "NVR", XAddr: xaddr, Channels: rc},
+		},
+	}
+	return postDiscovered(ctx, client, backendURL, deviceToken, payload)
 }
 
 // RunReporter discovers ONVIF devices on the LAN and reports them to the
@@ -182,5 +220,78 @@ func RunResolver(ctx context.Context, backendURL, deviceToken string, interval t
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// nvrCredentials mirrors the backend's NvrCredentialsResponse schema.
+type nvrCredentials struct {
+	XAddr    string `json:"xaddr"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// fetchNvrCredentials fetches (and, server-side, deletes) the credentials
+// staged by POST /{agent_id}/nvr-channels. A 404 means nothing is pending
+// — not an error, just nothing to do — and is reported as (nil, nil).
+func fetchNvrCredentials(ctx context.Context, client *http.Client, backendURL, deviceToken string) (*nvrCredentials, error) {
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, backendURL+"/api/agents/me/nvr-credentials", nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+deviceToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch nvr credentials: %s", resp.Status)
+	}
+	var out nvrCredentials
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ResolveChannels drains the NVR credentials staged for this agent (if
+// any), enumerates the NVR's ONVIF media profiles, and reports the channel
+// list back to the backend. Called on the "resolve_channels" control
+// message.
+//
+// The credentials are read once, held only in local variables for the
+// duration of this call, and never logged — not even on failure. An ONVIF
+// failure logs only the xaddr and the SOAP fault code (via
+// discovery.FaultCode), never the username, the password, or a raw
+// response body that might echo request data back.
+func ResolveChannels(ctx context.Context, backendURL, deviceToken string) {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	creds, err := fetchNvrCredentials(ctx, client, backendURL, deviceToken)
+	if err != nil {
+		slog.Warn("fetch nvr credentials failed", "err", err)
+		return
+	}
+	if creds == nil {
+		// Nothing pending — the command arrived after the credentials
+		// already expired, or were already consumed by a prior delivery.
+		return
+	}
+
+	channels, err := ResolveAllStreamURIs(ctx, creds.XAddr, creds.Username, creds.Password)
+	if err != nil {
+		slog.Warn("resolve nvr channels failed", "xaddr", creds.XAddr, "fault_code", FaultCode(err))
+		return
+	}
+	slog.Info("resolved nvr channels", "xaddr", creds.XAddr, "channels", len(channels))
+
+	if err := ReportChannels(ctx, client, backendURL, deviceToken, creds.XAddr, channels); err != nil {
+		slog.Warn("report nvr channels failed", "xaddr", creds.XAddr, "err", err)
 	}
 }

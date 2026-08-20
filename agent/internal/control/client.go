@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/nightwatch/agent/internal/discovery"
 	"github.com/nightwatch/agent/webrtcsignal"
 )
 
@@ -121,6 +122,10 @@ func (c *Client) runOnce(ctx context.Context) error {
 			// burst of scan_now messages never overlaps into concurrent
 			// ONVIF probes.
 			go c.scan.handleScanNow(ctx, c.backendURL, c.deviceToken)
+		case "resolve_channels":
+			// Fire-and-forget, same as scan_now: results land via
+			// POST /api/agents/me/discovered, not a reply on this socket.
+			go discovery.ResolveChannels(ctx, c.backendURL, c.deviceToken)
 		default:
 			continue
 		}

@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class PairCodeRequest(BaseModel):
@@ -81,12 +81,26 @@ class AgentDetailResponse(BaseModel):
     cameras_streaming: int = 0
 
 
+class DiscoveredChannel(BaseModel):
+    """One ONVIF media profile (NVR channel) enumerated from a device.
+
+    Deliberately carries no stream URI and no credentials: this record
+    flows agent -> backend -> (via GET /discover) browser, and an NVR
+    password must never reach the browser. The profile token is enough to
+    identify the channel for a later, separate resolve step.
+    """
+
+    profile_token: str = Field(..., max_length=256)
+    name: str | None = None
+
+
 class DiscoveredDevice(BaseModel):
     """An ONVIF device found by the agent's WS-Discovery probe."""
 
     uuid: str = Field(..., max_length=256)
     name: str = "unknown"
     xaddr: str = Field(..., max_length=512)
+    channels: list[DiscoveredChannel] = Field(default_factory=list, max_length=256)
 
 
 class DiscoverPushRequest(BaseModel):
@@ -146,9 +160,39 @@ class ResolveJobsResponse(BaseModel):
     jobs: list[ResolveJob]
 
 
+class NvrChannelsRequest(BaseModel):
+    """Body for POST /{agent_id}/nvr-channels.
+
+    Credentials are supplied once here and handed to the agent for a single
+    ONVIF enumeration pass; see ``resolve_nvr_channels`` for the Redis
+    handoff. ``password`` is a ``SecretStr`` so it never renders as plain
+    text in a repr, an OpenAPI example, or an accidental log of the parsed
+    model — callers must use ``.get_secret_value()`` explicitly to read it.
+    """
+
+    xaddr: str = Field(..., max_length=512)
+    username: str = Field(..., max_length=256)
+    password: SecretStr = Field(..., max_length=256)
+
+
 class ResolveResultRequest(BaseModel):
     rtsp_url: str | None = None
     error: str | None = None
+
+
+class NvrCredentialsResponse(BaseModel):
+    """Body of GET /me/nvr-credentials.
+
+    This is the ONE deliberate exception to "password never appears in an
+    HTTP response": the agent needs the plaintext value to authenticate
+    against the NVR over ONVIF. The backend deletes the Redis key in the
+    same request that returns this, so a retry or a second fetch gets 404,
+    never a stale/duplicate copy of the password.
+    """
+
+    xaddr: str
+    username: str
+    password: str
 
 
 class OnboardingCameraState(BaseModel):

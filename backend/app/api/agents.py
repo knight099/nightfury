@@ -8,6 +8,8 @@ Endpoints:
 - POST /api/agents/me/discovered           (agent)  -> agent pushes LAN ONVIF discovery results
 - POST /api/agents/{agent_id}/discover     (auth)   -> read the agent's latest discovery results
 - POST /api/agents/{agent_id}/scan         (auth)   -> ask a paired box to run ONVIF discovery now
+- POST /api/agents/{agent_id}/nvr-channels (auth)   -> enumerate an NVR's channels from one credential prompt
+- GET  /api/agents/me/nvr-credentials      (agent)  -> delete-on-read fetch of the NVR creds for that job
 - POST /api/agents/{agent_id}/cameras      (auth)   -> register a camera bound to the agent
 - GET  /api/agents/me/resolve-jobs         (agent)  -> drain pending ONVIF GetStreamUri jobs
 - POST /api/agents/me/resolve-jobs/{id}    (agent)  -> agent reports resolved RTSP URL
@@ -40,6 +42,8 @@ from app.schemas.agent import (
     DiscoveredDevice,
     DiscoverPushRequest,
     DiscoverResponse,
+    NvrChannelsRequest,
+    NvrCredentialsResponse,
     OnboardingStatusResponse,
     PairCodeRequest,
     PairCodeResponse,
@@ -246,6 +250,76 @@ async def trigger_scan(
             detail="The box is not connected right now. Check its power and network.",
         )
     return {"status": "scanning"}
+
+
+NVR_CREDS_TTL_SECONDS = 120
+
+
+def _nvr_creds_key(agent_id: uuid.UUID) -> str:
+    return f"agent:nvr_creds:{agent_id}"
+
+
+@router.post("/{agent_id}/nvr-channels", status_code=status.HTTP_202_ACCEPTED)
+async def resolve_nvr_channels(
+    agent_id: uuid.UUID,
+    payload: NvrChannelsRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Enumerate an NVR's channels using credentials supplied once.
+
+    The credentials are written to Redis with a short TTL purely so the
+    agent's next poll can pick them up, and are deleted server-side the
+    moment the agent's GET /me/nvr-credentials reads them. They are never
+    written to Postgres and never logged: an NVR password is the customer's
+    whole security perimeter, and a support engineer reading logs must not
+    be able to see it.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    redis = await get_redis()
+    key = _nvr_creds_key(agent.id)
+    await redis.setex(
+        key,
+        NVR_CREDS_TTL_SECONDS,
+        json.dumps({
+            "xaddr": payload.xaddr,
+            "username": payload.username,
+            "password": payload.password.get_secret_value(),
+        }),
+    )
+    try:
+        await registry.send_command(agent.id, {"type": "resolve_channels"})
+    except ConnectionError:
+        # Nobody is going to poll for these credentials now — don't leave
+        # them sitting in Redis for the rest of the TTL window.
+        await redis.delete(key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The box is not connected right now.",
+        )
+    return {"status": "resolving"}
+
+
+@router.get("/me/nvr-credentials", response_model=NvrCredentialsResponse)
+async def get_nvr_credentials(
+    agent: Agent = Depends(get_agent_from_token),
+) -> NvrCredentialsResponse:
+    """Delete-on-read fetch of the NVR credentials staged for this agent.
+
+    Deleting happens here, server-side, in the same call that returns the
+    payload — not left to the agent to do afterwards. If the agent crashes
+    between reading the response and finishing its ONVIF calls, the
+    password must not still be sitting in Redis for the remainder of the
+    TTL window. A second fetch (retry, duplicate poll, crash-and-restart)
+    finds nothing and gets 404, never a stale copy of the password.
+    """
+    redis = await get_redis()
+    key = _nvr_creds_key(agent.id)
+    raw = await redis.getdel(key)
+    if raw is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no pending credentials")
+    data = json.loads(raw)
+    return NvrCredentialsResponse(**data)
 
 
 DISCOVERY_TTL_SECONDS = 600
