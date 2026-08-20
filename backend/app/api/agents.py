@@ -38,6 +38,7 @@ from app.schemas.agent import (
     DiscoveredDevice,
     DiscoverPushRequest,
     DiscoverResponse,
+    OnboardingStatusResponse,
     PairCodeRequest,
     PairCodeResponse,
     PairRequest,
@@ -51,7 +52,12 @@ from app.schemas.agent import (
 from app.schemas.camera_setup import SetupJob, SetupJobsResponse, SetupResultRequest
 from app.services.camera_setup.validator import validate_proposal
 from app.services.device_token_service import DeviceTokenService
+from app.services.onboarding_status_service import (
+    OnboardingStatusService,
+    _discovery_key,
+)
 from app.services.pairing_service import PairingService
+from app.services.snapshot_urls import signed_latest_frame_url
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -202,11 +208,22 @@ async def get_agent(
     )
 
 
+@router.get("/{agent_id}/onboarding-status", response_model=OnboardingStatusResponse)
+async def get_onboarding_status(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OnboardingStatusResponse:
+    """One source of truth for the onboarding wizard's current step."""
+    agent = await _load_agent_for_user(agent_id, user, db)
+    svc = OnboardingStatusService(db)
+    payload = await svc.status(agent)
+    for cam in payload["cameras"]:
+        cam["snapshot_url"] = await signed_latest_frame_url(cam["camera_id"])
+    return OnboardingStatusResponse(**payload)
+
+
 DISCOVERY_TTL_SECONDS = 600
-
-
-def _discovery_key(agent_id: uuid.UUID) -> str:
-    return f"agent:discovered:{agent_id}"
 
 
 @router.post("/me/discovered", status_code=status.HTTP_204_NO_CONTENT)

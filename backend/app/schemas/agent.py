@@ -149,3 +149,24 @@ class ResolveJobsResponse(BaseModel):
 class ResolveResultRequest(BaseModel):
     rtsp_url: str | None = None
     error: str | None = None
+
+
+class OnboardingCameraState(BaseModel):
+    camera_id: uuid.UUID
+    name: str
+    status: str                      # online | offline | error | unassigned
+    first_frame_at: datetime | None = None
+    snapshot_url: str | None = None
+    zones_count: int = 0
+    failure_reason: str | None = None
+
+
+class OnboardingStatusResponse(BaseModel):
+    agent_id: uuid.UUID
+    state: str                       # see STATES below
+    agent_online: bool
+    last_seen_at: datetime | None = None
+    discovered_count: int = 0
+    cameras: list[OnboardingCameraState] = []
+    verified_camera_count: int = 0
+    failure_reason: str | None = None
