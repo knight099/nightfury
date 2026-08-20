@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Btn, EmptyState } from "@/components/v2/ui";
 
 export default function CamerasPageV2() {
   const { data: cameras, isLoading, isError, error } = useQuery({
@@ -26,9 +27,11 @@ export default function CamerasPageV2() {
 
   return (
     <div className="max-w-[1040px] mx-auto px-12 pt-12 pb-20">
-      <div className="flex items-baseline justify-between mb-1.5">
+      <div className="flex items-baseline justify-between gap-4 mb-1.5">
         <div className="text-[28px] font-bold tracking-tight">Cameras</div>
-        <div className="text-[13px] text-[oklch(58%_0.01_265)]">Click a camera to give it a job.</div>
+        <Link href="/app/cameras/connect">
+          <Btn variant="primary" className="shrink-0">+ Connect a camera</Btn>
+        </Link>
       </div>
       <div className="text-[15px] text-[oklch(65%_0.01_265)] mb-7">
         Every camera below is on watch. Click one to see what it&apos;s up to.
@@ -55,7 +58,10 @@ export default function CamerasPageV2() {
           ))}
         </div>
       ) : (
-        <div className="text-sm text-[oklch(55%_0.01_265)]">No cameras yet.</div>
+        <EmptyState
+          title="No cameras yet"
+          hint="Connect an NVR, a Nightwatch device, or a direct RTSP stream to start watching."
+        />
       )}
     </div>
   );

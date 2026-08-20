@@ -823,7 +823,7 @@ export default function TestCameraPageV2() {
             <div className="bg-[oklch(13%_0.015_265)] border border-[oklch(22%_0.015_265)] rounded-lg p-2 text-xs space-y-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-[oklch(55%_0.01_265)] uppercase text-[10px]">Session</span>
-                <a href="/usage" className="text-[10px] text-[oklch(85%_0.16_84)] hover:underline">All-time →</a>
+                <a href="/app/usage" className="text-[10px] text-[oklch(85%_0.16_84)] hover:underline">All-time →</a>
               </div>
               <div className="text-[oklch(85%_0.005_265)]">
                 <span className="text-[oklch(97%_0.005_265)]">{formatDuration(Date.now() - sessionStartedAt)}</span> · {sessionStats.calls} calls · <span className="text-[oklch(79.2%_0.209_151.711)]">${sessionStats.cost_usd.toFixed(4)}</span>

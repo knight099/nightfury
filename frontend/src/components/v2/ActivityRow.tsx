@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Event } from "@/types";
 
 const severityColor: Record<Event["severity"], string> = {
@@ -10,7 +11,10 @@ const severityColor: Record<Event["severity"], string> = {
 export function ActivityRow({ event, cameraName }: { event: Event; cameraName: string }) {
   const color = severityColor[event.severity];
   return (
-    <div className="flex items-center gap-3.5 px-[18px] py-3.5 border-b border-[oklch(19%_0.015_265)] bg-[oklch(12%_0.015_265)]">
+    <Link
+      href={`/app/activity/${event.id}`}
+      className="flex items-center gap-3.5 px-[18px] py-3.5 border-b border-[oklch(19%_0.015_265)] bg-[oklch(12%_0.015_265)] hover:bg-[oklch(15%_0.015_265)] transition-colors"
+    >
       <div
         className="text-[11px] font-bold tracking-wide px-2.5 py-1.5 rounded-full whitespace-nowrap flex-shrink-0"
         style={{ color, backgroundColor: `color-mix(in oklab, ${color} 16%, transparent)` }}
@@ -23,6 +27,6 @@ export function ActivityRow({ event, cameraName }: { event: Event; cameraName: s
           {cameraName} · {new Date(event.timestamp).toLocaleString()}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

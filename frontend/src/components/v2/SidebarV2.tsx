@@ -3,20 +3,40 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Home, Camera, Map, Bot, Activity, FileText, Settings, LogOut, Video } from "lucide-react";
+import {
+  Home,
+  Camera,
+  Map,
+  Bot,
+  Activity,
+  FileText,
+  Settings,
+  LogOut,
+  Video,
+  Bell,
+  Grid3x3,
+  Server,
+  BarChart3,
+  Building2,
+} from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/app", label: "Home", icon: Home },
+  { href: "/app/sites", label: "Sites", icon: Building2 },
   { href: "/app/cameras", label: "Cameras", icon: Camera },
   { href: "/app/map", label: "Map", icon: Map },
   { href: "/app/agents", label: "Agents", icon: Bot },
   { href: "/app/activity", label: "Activity", icon: Activity },
+  { href: "/app/alerts", label: "Alerts", icon: Bell },
+  { href: "/app/wall", label: "Video wall", icon: Grid3x3 },
+  { href: "/app/fleet", label: "Fleet", icon: Server },
   { href: "/app/digests", label: "Digests", icon: FileText },
-  { href: "/app/settings", label: "Settings", icon: Settings },
   { href: "/app/test-camera", label: "Test AI", icon: Video },
+  { href: "/app/usage", label: "Usage", icon: BarChart3 },
+  { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
 export function SidebarV2() {
