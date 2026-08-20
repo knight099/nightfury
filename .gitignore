@@ -65,3 +65,6 @@ agent/nightwatch-agent
 
 # Research papers kept locally, not committed (large binaries)
 /*.pdf
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
