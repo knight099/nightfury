@@ -11,10 +11,10 @@ import (
 
 // bannerHandler serves the pairing banner (QR + spaced digits) at "/" for a
 // customer browsing to the box on the LAN when there is no display
-// attached. It is only used by the device-initiated pairing path, where the
-// code and claim URL are already known when the local UI server starts; the
-// legacy dashboard-code flow passes an empty code and this handler falls
-// through to the static file server unchanged.
+// attached. Used by ServeBanner (device-initiated pairing path only) with
+// code and claimURL already known; fallback is invoked for any other path
+// or when code is empty (defense in depth — ServeBanner's mux only ever
+// registers "/").
 type bannerHandler struct {
 	code     string
 	claimURL string

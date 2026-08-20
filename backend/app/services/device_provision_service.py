@@ -1,4 +1,3 @@
-import random
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -72,6 +71,15 @@ class DeviceProvisionService:
             )
         ).scalar_one_or_none()
         if existing:
+            # A device_id alone must not be enough to pull a fresh claim
+            # handle for someone else's waiting provisioning row — verify
+            # this call is coming from the same box (pubkey + machine_id)
+            # that created it before refreshing anything.
+            if existing.pubkey != pubkey or existing.machine_id != machine_id:
+                raise ValueError(
+                    "device_id already has a pending provisioning request "
+                    "from a different device"
+                )
             existing.expires_at = fresh_expiry
             await self.db.flush()
             claim_token = await self._mint_claim_token(existing.device_id)
@@ -90,7 +98,7 @@ class DeviceProvisionService:
             ).scalar_one_or_none()
             if conflict is None:
                 break
-            code = f"{random.randint(0, 10**code_len - 1):0{code_len}d}"
+            code = f"{secrets.randbelow(10**code_len):0{code_len}d}"
 
         provision = DeviceProvision(
             device_id=device_id,

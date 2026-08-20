@@ -137,7 +137,7 @@ func main() {
 					version:   agentVersion,
 				}
 				go func() {
-					if err := localui.Serve(cfg.LocalUIAddr, adapter, "", ""); err != nil {
+					if err := localui.Serve(cfg.LocalUIAddr, adapter); err != nil {
 						log.Printf("local UI server exited: %v", err)
 					}
 				}()
@@ -174,19 +174,17 @@ func main() {
 				slog.Info("DEVICE PAIRING CODE: "+displayCode, "action", "enter at nightwatch.ai → Cameras → Connect Device")
 				slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-				// Also serve the same QR/digits banner on the LAN for a
-				// customer with no display attached to the box.
-				localUIAdapter := &pairAdapter{
-					backend: backend, store: s, machineID: mid, pubkey: pub, version: agentVersion,
-				}
-				go func() {
-					if err := localui.Serve(cfg.LocalUIAddr, localUIAdapter, displayCode, claimURL); err != nil {
-						log.Printf("local UI server exited: %v", err)
-					}
-				}()
-
 				// Keep the banner visible on an HDMI console (which has no
-				// scrollback to refer back to) until the box is claimed.
+				// scrollback to refer back to) until the box is claimed, and
+				// serve the same banner on the LAN for a customer with no
+				// display attached. Both are cancelled together once
+				// PollUntilClaimed returns — the LAN listener in particular
+				// must not outlive the pairing window: unlike Serve (legacy
+				// AGENT_PAIR_MODE=localui), ServeBanner has no auth check on
+				// anything (it serves only a read-only page), so leaving it
+				// up indefinitely would just be needless attack surface,
+				// not a takeover path — but there is no reason to keep it
+				// running after the box is claimed either.
 				bannerCtx, stopBanner := context.WithCancel(ctx)
 				go func() {
 					ticker := time.NewTicker(30 * time.Second)
@@ -198,6 +196,11 @@ func main() {
 						case <-ticker.C:
 							fmt.Print(devicepair.Banner(displayCode, claimURL))
 						}
+					}
+				}()
+				go func() {
+					if err := localui.ServeBanner(bannerCtx, cfg.LocalUIAddr, displayCode, claimURL); err != nil {
+						log.Printf("local UI banner server exited: %v", err)
 					}
 				}()
 

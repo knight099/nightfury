@@ -110,7 +110,7 @@ async def claim_device(
 
     svc = DeviceProvisionService(db)
     try:
-        if payload.claim_token is not None:
+        if payload.claim_token:
             # Opaque lookup handle from the QR — never the device_token.
             prov = await svc.claim_by_token(
                 payload.claim_token, org_id, settings.relay_public_url
