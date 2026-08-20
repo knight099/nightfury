@@ -266,7 +266,7 @@ GitHub Actions workflow at `.github/workflows/deploy.yml` handles:
 - Self-sizing capacity, graceful degradation, batched heartbeat, setup-job polling
 - Supervisor manages multiple cameras, health reporting, auto-restart
 
-### Frontend (30 routes, builds clean)
+### Frontend (36 routes, builds clean)
 - Next.js App Router + TypeScript + Tailwind + shadcn/ui, dark theme only
 - Core: login, dashboard, events (+ detail, feedback, incident status), cameras (+ per-camera view, zones, sequences), alerts, digests, settings, usage, admin
 - Estate: `/fleet` (appliance capacity + coverage), `/wall` (video wall), `/map` (camera adjacency), `/setup` (agentic camera setup)
@@ -329,11 +329,13 @@ section above and is not repeated here.
 - **Alert rules are proposed but never applied.** `suggested_alert` is stored and displayed; approval never writes an alert rule. The per-camera confirm-and-write flow is unbuilt
 - **Scheduled digests are still org-wide.** On-demand digests are site-scoped, so a site-restricted account sees those but never the morning/evening runs. Needs per-site scheduled generation
 - **No end-to-end test against a real camera** (CP Plus RTSP → pipeline → backend → frontend). Still the highest-value pre-pilot check
+- **Gemini image-token usage is never recorded.** `gemini_client._call_gemini` discards `response.usage_metadata`, so per-camera AI spend is inferred from call counts rather than measured. Any argument about vision cost is currently unfalsifiable
 
 ### Not built
 - **Fall / person-down detection.** Pose labels exist (`standing`, `bending`, `crouching`, `sitting`, `reaching`) but there is no validated fallen state. Do not promise this to customers
 - **Crowd density / occupancy counting.** Distinct from footfall line-crossing, and not implemented
 - **Cross-camera person re-identification.** Deliberately out of scope — see `docs/superpowers/specs/2026-08-01-remind-reid-integration-design.md` for why (GPU-dependent, more privacy-sensitive, and journeys deliberately avoid identity claims)
+- **Foveated (variable-resolution) sampling on the Gemini escalation path.** Designed, not built, and deliberately gated: `docs/superpowers/specs/2026-08-20-foveated-sampling-design.md`. The CVPR-2025 result it rests on was measured on daylight web imagery and its gain is attributed to texture — which IR and H.264 destroy first — so the spec opens with a four-arm offline evaluation (full / uniform / crop / foveated at matched pixel budget) whose decision gate can cancel the whole thing. Do not start implementation at Phase 1 before that gate clears. Note the plain crop arm may simply win, in which case the design is deleted rather than built
 - Analytics / charts page; full-text search across events
 - Loading skeletons and error boundaries on the older pages
 

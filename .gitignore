@@ -62,3 +62,6 @@ agent/nightwatch-agent
 # Private keys / secrets
 *.pem
 .scratch/
+
+# Research papers kept locally, not committed (large binaries)
+/*.pdf
