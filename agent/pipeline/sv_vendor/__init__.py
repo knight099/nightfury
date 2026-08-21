@@ -15,5 +15,6 @@ from sv_vendor.geometry import Point, Position, Rect, Vector
 from sv_vendor.detections import Detections
 from sv_vendor.byte_tracker.core import ByteTrack
 from sv_vendor.line_zone import LineZone
+from sv_vendor.polygon_zone import PolygonZone
 
-__all__ = ["Point", "Position", "Rect", "Vector", "Detections", "ByteTrack", "LineZone"]
+__all__ = ["Point", "Position", "Rect", "Vector", "Detections", "ByteTrack", "LineZone", "PolygonZone"]

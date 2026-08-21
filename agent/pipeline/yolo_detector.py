@@ -6,7 +6,7 @@ import numpy as np
 
 from config import config
 from models import BoundingBox, CameraConfig, DetectedEvent
-from sv_vendor import Detections
+from sv_vendor import Detections, PolygonZone, Position
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,11 @@ class YoloDetection:
 
 
 def point_in_polygon(x: float, y: float, points: list) -> bool:
-    """Ray-casting point-in-polygon test. points is a list of [x, y] pairs."""
+    """Ray-casting point-in-polygon test. points is a list of [x, y] pairs.
+
+    Kept — still used by camera_worker.py::_zone_for_bbox for the
+    pose/step-sequence zone lookup, which is out of scope for this
+    refactor (see Task 5 of the supervision-tracking-refactor plan)."""
     if len(points) < 3:
         return False
     inside = False
@@ -50,12 +54,42 @@ def point_in_polygon(x: float, y: float, points: list) -> bool:
     return inside
 
 
+# _zone_containing is called once per detection per frame, and camera
+# zones don't change frame-to-frame, so cache one PolygonZone per
+# distinct zone-points shape rather than reconstructing it on every call.
+_polygon_zone_cache: dict[tuple, "PolygonZone"] = {}
+
+
+def _get_polygon_zone(zone: dict) -> "PolygonZone | None":
+    points = zone.get("points", [])
+    if len(points) < 3:
+        return None
+    key = tuple(tuple(p) for p in points)
+    if key not in _polygon_zone_cache:
+        polygon = np.array(points, dtype=np.float32)
+        # Position.CENTER, not PolygonZone's default BOTTOM_CENTER: the
+        # old ray-casting _zone_containing tested the bbox's own center
+        # ((y1+y2)/2), not its bottom edge. Overriding to preserve that
+        # exact membership test — this feeds real intrusion alerts, so a
+        # library swap must not silently change which detections trigger
+        # one. Switching to feet-based zone membership may be a real
+        # future improvement, but it's a product decision, not a side
+        # effect of this refactor.
+        _polygon_zone_cache[key] = PolygonZone(polygon=polygon, triggering_anchors=(Position.CENTER,))
+    return _polygon_zone_cache[key]
+
+
 def _zone_containing(bbox: BoundingBox, zones: list) -> str | None:
-    cx = (bbox.x1 + bbox.x2) / 2
-    cy = (bbox.y1 + bbox.y2) / 2
+    single = Detections(
+        xyxy=np.array([[bbox.x1, bbox.y1, bbox.x2, bbox.y2]], dtype=np.float32),
+        confidence=np.array([1.0], dtype=np.float32),
+        class_id=np.zeros(1, dtype=int),
+    )
     for zone in zones:
-        points = zone.get("points", [])
-        if point_in_polygon(cx, cy, points):
+        pz = _get_polygon_zone(zone)
+        if pz is None:
+            continue
+        if pz.trigger(single)[0]:
             return zone.get("name", "unnamed")
     return None
 
