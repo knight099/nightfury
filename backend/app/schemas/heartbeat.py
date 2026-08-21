@@ -41,6 +41,11 @@ class CameraHeartbeat(BaseModel):
     # reported exactly once — a dropped heartbeat loses that interval rather
     # than double-counting the next.
     footfall: dict[str, dict[str, int]] | None = None
+    # Cumulative frames decoded for this camera since the pipeline started.
+    # Onboarding's "stream verified" step needs to know a frame was actually
+    # decoded, not just that a stream object exists — see
+    # agent/pipeline/camera_worker.py::heartbeat_payload.
+    frames_processed: int = 0
 
     model_config = ConfigDict(extra="allow")  # free-form per-camera metrics
 
