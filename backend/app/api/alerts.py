@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
+from app.core.redis import get_redis
 from app.models.alert_history import AlertHistory
 from app.models.alert_rule import AlertRule
 from app.models.user import User
@@ -13,11 +14,16 @@ from app.schemas.alert import (
     AlertHistoryResponse,
     AlertRuleResponse,
     CreateAlertRuleRequest,
+    TestNotificationResponse,
     UpdateAlertRuleRequest,
 )
+from app.services.notification_service import notification_service
 from app.services.soft_delete_service import soft_delete_service
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+TEST_NOTIFICATION_LIMIT = 5
+TEST_NOTIFICATION_WINDOW_SECONDS = 3600
 
 
 def _rule_query(user: User, include_deleted: bool = False):
@@ -146,3 +152,76 @@ async def alert_history(
     q = q.order_by(AlertHistory.sent_at.desc()).offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
     return [AlertHistoryResponse.model_validate(h) for h in result.scalars().all()]
+
+
+@router.post("/test", response_model=TestNotificationResponse)
+async def send_test_notification(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TestNotificationResponse:
+    """Prove the delivery channel works, without touching Gemini or an Event row.
+
+    Onboarding's final step needs a real signal that WhatsApp/email actually
+    reaches the customer before asking them to trust a walk-test. Sends
+    through the same contacts an alert rule would notify, but the message is
+    explicitly labelled as a test so it can never be mistaken for a real
+    detection.
+    """
+    redis = await get_redis()
+    rl_key = f"onboarding:test_notify:{user.org_id}"
+    count = await redis.incr(rl_key)
+    if count == 1:
+        await redis.expire(rl_key, TEST_NOTIFICATION_WINDOW_SECONDS)
+    if count > TEST_NOTIFICATION_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many test notifications sent. Try again in a bit.",
+        )
+
+    rows = await db.execute(
+        select(AlertRule).where(
+            AlertRule.org_id == user.org_id,
+            AlertRule.deleted_at.is_(None),
+            AlertRule.enabled.is_(True),
+        )
+    )
+    contacts: list[dict] = []
+    for rule in rows.scalars().all():
+        for contact in rule.notify_contacts or []:
+            if contact not in contacts:
+                contacts.append(contact)
+
+    if not contacts:
+        return TestNotificationResponse(
+            delivered=False,
+            detail="No alert contacts configured yet. Add one under Alerts before testing.",
+        )
+
+    message = (
+        "This is a test message from Nightwatch confirming your alerts "
+        "reach you. No action needed."
+    )
+    delivered_any = False
+    for contact in contacts:
+        ctype = contact.get("type")
+        value = contact.get("value")
+        if not value:
+            continue
+        if ctype == "whatsapp":
+            ok = await notification_service.send_text_whatsapp(value, message)
+        elif ctype == "email":
+            ok = await notification_service.send_text_email(
+                value, "Nightwatch test notification", message
+            )
+        else:
+            continue
+        delivered_any = delivered_any or ok
+
+    return TestNotificationResponse(
+        delivered=delivered_any,
+        detail=(
+            "Test notification sent."
+            if delivered_any
+            else "Could not deliver to any configured contact. Check WhatsApp/email settings."
+        ),
+    )

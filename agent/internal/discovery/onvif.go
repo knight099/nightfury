@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -200,6 +201,46 @@ func soapEnvelope(security, body string) string {
 </s:Envelope>`, security, body)
 }
 
+// SoapFaultError wraps a non-2xx ONVIF SOAP response. It carries the raw
+// response body only in memory so FaultCode can parse it on demand;
+// Error() itself does not include the body, so a bare log.Printf("%v", err)
+// can never spill a full SOAP fault (or, in principle, anything echoed
+// back from the device) into logs.
+type SoapFaultError struct {
+	Action     string
+	StatusCode int
+	Body       []byte
+}
+
+func (e *SoapFaultError) Error() string {
+	return fmt.Sprintf("onvif %s: status %d", e.Action, e.StatusCode)
+}
+
+// FaultCode extracts the SOAP Fault Code/Value from a SoapFaultError's
+// response body, for callers that must log an ONVIF failure without ever
+// logging the full fault text (which could echo request data back). Returns
+// "" if err is not a SoapFaultError or the body has no parseable fault
+// code.
+func FaultCode(err error) string {
+	var soapErr *SoapFaultError
+	if !errors.As(err, &soapErr) {
+		return ""
+	}
+	var env struct {
+		Body struct {
+			Fault struct {
+				Code struct {
+					Value string `xml:"Value"`
+				} `xml:"Code"`
+			} `xml:"Fault"`
+		} `xml:"Body"`
+	}
+	if xml.Unmarshal(soapErr.Body, &env) != nil {
+		return ""
+	}
+	return env.Body.Fault.Code.Value
+}
+
 func postSOAP(ctx context.Context, client *http.Client, xaddr, action, security, body string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, xaddr, bytes.NewReader([]byte(soapEnvelope(security, body))),
@@ -220,7 +261,7 @@ func postSOAP(ctx context.Context, client *http.Client, xaddr, action, security,
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("onvif %s: status %d: %s", action, resp.StatusCode, string(respBody))
+		return nil, &SoapFaultError{Action: action, StatusCode: resp.StatusCode, Body: respBody}
 	}
 	return respBody, nil
 }
@@ -313,6 +354,127 @@ func ResolveStreamURI(ctx context.Context, xaddr, username, password string) (st
 		return "", err
 	}
 	return withCredentials(streamURI, username, password)
+}
+
+// ResolveStreamURIForProfile authenticates against the ONVIF device at
+// xaddr and returns the RTSP stream URI for one specific media profile,
+// identified by the token an earlier ResolveAllStreamURIs enumeration
+// returned. Skips GetProfiles entirely — the caller already knows the
+// token is valid, since the wizard's channel checklist only ever shows
+// tokens that channel enumeration confirmed resolve.
+func ResolveStreamURIForProfile(ctx context.Context, xaddr, username, password, profileToken string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	security, err := wsSecurityHeader(username, password)
+	if err != nil {
+		return "", err
+	}
+	streamBody := fmt.Sprintf(
+		`<trt:GetStreamUri xmlns:trt="%s" xmlns:tt="http://www.onvif.org/ver10/schema">
+  <trt:StreamSetup>
+    <tt:Stream>RTP-Unicast</tt:Stream>
+    <tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport>
+  </trt:StreamSetup>
+  <trt:ProfileToken>%s</trt:ProfileToken>
+</trt:GetStreamUri>`, mediaNS, profileToken,
+	)
+	resp, err := postSOAP(ctx, client, xaddr, getStreamURIAct, security, streamBody)
+	if err != nil {
+		return "", fmt.Errorf("GetStreamUri: %w", err)
+	}
+	streamURI, err := parseStreamURI(resp)
+	if err != nil {
+		return "", err
+	}
+	return withCredentials(streamURI, username, password)
+}
+
+// Channel is one ONVIF media profile enumerated from an NVR: enough to
+// identify a camera channel for the onboarding UI without carrying a
+// stream URI (and therefore without carrying credentials) back to the
+// backend and, from there, to the browser.
+type Channel struct {
+	ProfileToken string
+}
+
+// ResolveAllStreamURIs authenticates against the ONVIF device at xaddr and
+// enumerates every media profile it advertises (one per NVR channel),
+// confirming each one actually resolves to a stream URI before including
+// it. It shares wsSecurityHeader/postSOAP/parseProfileTokens/parseStreamURI
+// with ResolveStreamURI rather than duplicating the SOAP plumbing; unlike
+// ResolveStreamURI it deliberately discards the resolved URI (which would
+// carry the NVR credentials) and returns only the profile token per
+// channel.
+//
+// A per-profile GetStreamUri failure does NOT abort the whole call: it is
+// common for a multi-channel NVR to have media profiles for channels with
+// no camera attached, or a disabled substream. Such profiles are skipped
+// (logged at profile-token + SOAP-fault-code granularity, never with the
+// password) and every profile that DID resolve is still returned. Only a
+// GetProfiles failure, or every single profile failing GetStreamUri, is
+// reported as an error — a customer with a 16-channel NVR and one dead
+// channel must still see the 15 working ones.
+func ResolveAllStreamURIs(ctx context.Context, xaddr, username, password string) ([]Channel, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	security, err := wsSecurityHeader(username, password)
+	if err != nil {
+		return nil, err
+	}
+	profilesBody := `<trt:GetProfiles xmlns:trt="` + mediaNS + `"/>`
+	resp, err := postSOAP(ctx, client, xaddr, getProfilesAct, security, profilesBody)
+	if err != nil {
+		return nil, fmt.Errorf("GetProfiles: %w", err)
+	}
+	tokens, err := parseProfileTokens(resp)
+	if err != nil {
+		return nil, fmt.Errorf("GetProfiles: %w", err)
+	}
+
+	channels := make([]Channel, 0, len(tokens))
+	for _, token := range tokens {
+		// Re-sign per request: nonces/timestamps must be fresh.
+		security, err = wsSecurityHeader(username, password)
+		if err != nil {
+			// Only a local nonce/random-read failure, not an ONVIF fault —
+			// not worth continuing the loop over.
+			return nil, err
+		}
+		streamBody := fmt.Sprintf(
+			`<trt:GetStreamUri xmlns:trt="%s" xmlns:tt="http://www.onvif.org/ver10/schema">
+  <trt:StreamSetup>
+    <tt:Stream>RTP-Unicast</tt:Stream>
+    <tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport>
+  </trt:StreamSetup>
+  <trt:ProfileToken>%s</trt:ProfileToken>
+</trt:GetStreamUri>`, mediaNS, token,
+		)
+		streamResp, serr := postSOAP(ctx, client, xaddr, getStreamURIAct, security, streamBody)
+		if serr != nil {
+			slog.Warn("nvr channel skipped: GetStreamUri failed",
+				"profile_token", token, "fault_code", FaultCode(serr))
+			continue
+		}
+		if _, perr := parseStreamURI(streamResp); perr != nil {
+			slog.Warn("nvr channel skipped: no stream uri in response", "profile_token", token)
+			continue
+		}
+		channels = append(channels, Channel{ProfileToken: token})
+	}
+	if len(channels) == 0 {
+		return nil, errors.New("no profile resolved a stream uri")
+	}
+	return channels, nil
 }
 
 // withCredentials embeds the NVR username/password into the RTSP URL.

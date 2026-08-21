@@ -48,6 +48,12 @@ class Settings(BaseSettings):
 
     dashboard_base_url: str = "https://nightfury-beta.vercel.app"
 
+    # Public URL of the customer-facing frontend, used to build the QR
+    # claim_url returned to a device during provisioning
+    # (https://app.../connect?claim=<opaque>). Defaults to the local dev
+    # frontend port.
+    app_public_url: str = "http://localhost:3000"
+
     # Public GitHub Release (or CDN) prefix containing the cross-compiled
     # agent files. Account-bound installer scripts fetch the platform binary
     # from here and never contain a permanent device credential.

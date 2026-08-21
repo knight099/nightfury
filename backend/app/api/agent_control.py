@@ -108,6 +108,23 @@ class ControlRegistry:
             raise SignalError("agent returned no answer")
         return payload
 
+    async def send_command(self, agent_id: uuid.UUID, msg: dict) -> None:
+        """Push a fire-and-forget command to an agent.
+
+        Distinct from request_signal, which is a WebRTC round-trip and
+        insists on an `answer` in the reply. Commands like scan_now have no
+        synchronous result — discovery lands later via
+        POST /api/agents/me/discovered — so waiting for one would guarantee
+        a timeout on every call.
+        """
+        ws = self.get(agent_id)
+        if ws is None:
+            raise ConnectionError("agent not connected")
+        try:
+            await ws.send_json(msg)
+        except Exception as e:
+            raise ConnectionError(f"agent socket send failed: {e}") from e
+
     def resolve(self, request_id: str, payload: dict) -> None:
         fut = self._pending.get(request_id)
         if fut and not fut.done():

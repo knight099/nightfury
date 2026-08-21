@@ -70,3 +70,8 @@ class AlertHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TestNotificationResponse(BaseModel):
+    delivered: bool
+    detail: str

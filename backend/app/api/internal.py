@@ -192,6 +192,9 @@ async def worker_heartbeat(
     footfall_by_camera = {
         c.camera_id: c.footfall for c in (body.cameras or []) if c.footfall
     }
+    frames_by_camera = {
+        c.camera_id: c.frames_processed for c in (body.cameras or [])
+    }
 
     camera_ids = [cid for cid in (_parse_uuid(c) for c, _ in reports) if cid is not None]
     cameras_by_id: dict[uuid.UUID, Camera] = {}
@@ -210,7 +213,12 @@ async def worker_heartbeat(
             continue
         # An agent that could not start a camera must not also mark it online.
         camera.status = "unassigned" if raw_id in rejected else status_value
-        if raw_id not in rejected:
+        # last_frame_at must mean "we have decoded video from this camera",
+        # not "the box mentioned this camera". Onboarding shows the customer
+        # a green "Camera connected" off this field, and a pipeline that has
+        # opened a stream but never decoded a frame is exactly the failure
+        # that check exists to catch.
+        if raw_id not in rejected and frames_by_camera.get(raw_id, 0) > 0:
             camera.last_frame_at = now
         camera.worker_id = body.worker_id
 

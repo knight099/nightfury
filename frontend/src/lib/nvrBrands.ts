@@ -1,3 +1,12 @@
+/**
+ * NVR camera brand templates — the single source of parameterised RTSP URL patterns.
+ * Outlived the four-step installer (deleted in consolidation) and carries six brands
+ * (CP Plus, Hikvision, Dahua, Reolink, Tapo, Generic ONVIF) that allow callers to
+ * build working URLs by interpolating {user}, {pass}, {host}, {ch} rather than only
+ * displaying template strings. The V2 wizard's inline BRAND_TEMPLATES lack Reolink
+ * and Tapo, and use hardcoded display strings instead of parameterised templates.
+ */
+
 export interface Brand {
   name: string;
   template: string;

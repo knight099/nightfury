@@ -90,6 +90,31 @@ class NotificationService:
             logger.error("send_text_whatsapp failed: %s", e)
             return False
 
+    async def send_text_email(self, email: str, subject: str, text: str) -> bool:
+        """Send a free-form plain-text email (used by the onboarding test, not alerts)."""
+        if not settings.sendgrid_api_key:
+            logger.warning("Email not configured (no SendGrid API key)")
+            return False
+        try:
+            payload = {
+                "personalizations": [{"to": [{"email": email}]}],
+                "from": {"email": settings.sendgrid_from_email, "name": "Nightwatch Alerts"},
+                "subject": subject,
+                "content": [{"type": "text/plain", "value": text}],
+            }
+            resp = await self.http_client.post(
+                "https://api.sendgrid.com/v3/mail/send",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.sendgrid_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            return resp.status_code in (200, 202)
+        except Exception as e:
+            logger.error("send_text_email failed: %s", e)
+            return False
+
     async def _send_email(self, email: str, event: Event) -> bool:
         if not settings.sendgrid_api_key:
             logger.warning("Email not configured (no SendGrid API key)")

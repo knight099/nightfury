@@ -155,19 +155,57 @@ func main() {
 				// Default: device-initiated provisioning.
 				// Device generates NW-XXXX, registers with cloud, waits for customer to claim it.
 				deviceID := loadOrCreateDeviceID(cfg.StateDir)
-				code := devicepair.GenerateCode()
+				code, err := devicepair.GenerateCode()
+				if err != nil {
+					// A box that cannot generate a secure code must fail
+					// loudly, not fall back to a weaker generator.
+					slog.Error("failed to generate pairing code", "err", err)
+					return
+				}
 				dc := devicepair.NewClient(backend)
 
-				displayCode, err := dc.Provision(ctx, deviceID, code, pub, mid, agentVersion)
+				displayCode, claimURL, err := dc.Provision(ctx, deviceID, code, pub, mid, agentVersion)
 				if err != nil {
 					slog.Error("device provision failed", "err", err)
 					return
 				}
+				fmt.Print(devicepair.Banner(displayCode, claimURL))
 				slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 				slog.Info("DEVICE PAIRING CODE: "+displayCode, "action", "enter at nightwatch.ai → Cameras → Connect Device")
 				slog.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+				// Keep the banner visible on an HDMI console (which has no
+				// scrollback to refer back to) until the box is claimed, and
+				// serve the same banner on the LAN for a customer with no
+				// display attached. Both are cancelled together once
+				// PollUntilClaimed returns — the LAN listener in particular
+				// must not outlive the pairing window: unlike Serve (legacy
+				// AGENT_PAIR_MODE=localui), ServeBanner has no auth check on
+				// anything (it serves only a read-only page), so leaving it
+				// up indefinitely would just be needless attack surface,
+				// not a takeover path — but there is no reason to keep it
+				// running after the box is claimed either.
+				bannerCtx, stopBanner := context.WithCancel(ctx)
+				go func() {
+					ticker := time.NewTicker(30 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-bannerCtx.Done():
+							return
+						case <-ticker.C:
+							fmt.Print(devicepair.Banner(displayCode, claimURL))
+						}
+					}
+				}()
+				go func() {
+					if err := localui.ServeBanner(bannerCtx, cfg.LocalUIAddr, displayCode, claimURL); err != nil {
+						log.Printf("local UI banner server exited: %v", err)
+					}
+				}()
+
 				tok, err := dc.PollUntilClaimed(ctx, deviceID)
+				stopBanner()
 				if err != nil {
 					slog.Error("provisioning failed", "err", err)
 					return

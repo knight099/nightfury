@@ -75,6 +75,17 @@ _ROUTE_RULES: list[tuple[str, str, int, int, str]] = [
     ("POST", "/api/auth/login", 10, 60, "ip"),
     ("POST", "/api/auth/signup", 5, 3600, "ip"),
     ("POST", "/api/agents/pair", 20, 3600, "ip"),
+    # The six-digit code space (and claim_token guesses) is only meaningful
+    # if the endpoint can't be walked — rate-limit by IP, not by bearer
+    # token, since a script could rotate/omit auth but not source IP as
+    # easily.
+    ("POST", "/api/devices/claim", 10, 60, "ip"),
+    # Unauthenticated: each call writes a Redis claim_token (256-bit, 10min
+    # TTL) plus a Postgres row. A legitimate device calls this once at boot
+    # (and again only if it reboots or its request is refreshed); bound it
+    # well above that to avoid false positives behind carrier-grade NAT
+    # while still capping unauthenticated write amplification.
+    ("POST", "/api/devices/provision", 30, 3600, "ip"),
 ]
 
 # Catch-all for authenticated API traffic.
@@ -101,20 +112,31 @@ def _token_tail_hash(request: Request) -> Optional[str]:
     return hashlib.sha256(token.encode()).hexdigest()[:32]
 
 
-def _resolve_rule(request: Request) -> Optional[Tuple[str, int, int]]:
-    """Return (key, limit, window) for the request, or None to skip."""
+def _resolve_rules(request: Request) -> list[Tuple[str, int, int]]:
+    """Return the (key, limit, window) rules to enforce for this request.
+
+    Usually a single rule, but an explicit per-route rule and the
+    account-level catch-all are BOTH applied when the caller is
+    authenticated: an IP-scoped route rule exists to stop an endpoint being
+    walked by an anonymous/rotating-identity script, and must not, as a side
+    effect, exempt an authenticated caller from the token-keyed ceiling it
+    would otherwise be subject to (IP is attacker-controlled via
+    X-Forwarded-For; the bearer-token hash is not).
+    """
     path = request.url.path
     method = request.method.upper()
 
     # Skip exempt paths.
     if path.startswith("/internal/"):
-        return None
+        return []
     if path.startswith("/ws/"):
-        return None
+        return []
     if path == "/health":
-        return None
+        return []
 
-    # Explicit per-route rules (IP-scoped).
+    rules: list[Tuple[str, int, int]] = []
+
+    # Explicit per-route rules (IP-scoped, or session-scoped falling back to IP).
     for rule_method, rule_path, limit, window, scope in _ROUTE_RULES:
         if rule_path == path and (rule_method == "*" or rule_method == method):
             if scope == "ip":
@@ -125,19 +147,24 @@ def _resolve_rule(request: Request) -> Optional[Tuple[str, int, int]]:
                     key = f"rl:{rule_path}:ip:{_client_ip(request)}"
                 else:
                     key = f"rl:{rule_path}:tok:{tail}"
-            return key, limit, window
+            rules.append((key, limit, window))
+            break
 
-    # Default: authenticated /api/* traffic, keyed by bearer token tail.
+    # Authenticated /api/* traffic is always additionally subject to the
+    # account-level catch-all, even when an explicit per-route rule above
+    # already matched.
     if path.startswith("/api/"):
         tail = _token_tail_hash(request)
-        if tail is None:
-            # Unauthenticated /api/* call without a specific rule: skip
+        if tail is not None:
+            key = f"rl:api:tok:{tail}"
+            if not any(existing_key == key for existing_key, _, _ in rules):
+                rules.append((key, _AUTHENTICATED_API_LIMIT, _AUTHENTICATED_API_WINDOW))
+        elif not rules:
+            # Unauthenticated /api/* call with no specific rule: skip
             # (per-route rules above already cover login/signup).
-            return None
-        key = f"rl:api:tok:{tail}"
-        return key, _AUTHENTICATED_API_LIMIT, _AUTHENTICATED_API_WINDOW
+            return []
 
-    return None
+    return rules
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -150,29 +177,40 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not settings.rate_limit_enabled:
             return await call_next(request)
 
-        rule = _resolve_rule(request)
-        if rule is None:
+        rules = _resolve_rules(request)
+        if not rules:
             return await call_next(request)
 
-        key, limit, window = rule
         try:
             redis_client = await get_redis()
-            allowed, retry_after = await check_rate_limit(
-                redis_client, key, limit, window
-            )
         except Exception:
             request_id = getattr(request.state, "request_id", "-")
             logger.warning(
-                "rate_limit_check_failed request_id=%s key=%s", request_id, key,
-                exc_info=True,
+                "rate_limit_check_failed request_id=%s (redis unavailable)",
+                request_id, exc_info=True,
             )
             return await call_next(request)
 
-        if not allowed:
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "rate limit exceeded"},
-                headers={"Retry-After": str(retry_after)},
-            )
+        # Every applicable rule must pass — a route-specific rule and the
+        # account-level catch-all are independent ceilings, not alternatives.
+        for key, limit, window in rules:
+            try:
+                allowed, retry_after = await check_rate_limit(
+                    redis_client, key, limit, window
+                )
+            except Exception:
+                request_id = getattr(request.state, "request_id", "-")
+                logger.warning(
+                    "rate_limit_check_failed request_id=%s key=%s", request_id, key,
+                    exc_info=True,
+                )
+                continue
+
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "rate limit exceeded"},
+                    headers={"Retry-After": str(retry_after)},
+                )
 
         return await call_next(request)

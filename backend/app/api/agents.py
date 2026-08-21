@@ -7,6 +7,13 @@ Endpoints:
 - GET  /api/agents/{agent_id}              (auth)   -> agent detail incl. cameras_streaming
 - POST /api/agents/me/discovered           (agent)  -> agent pushes LAN ONVIF discovery results
 - POST /api/agents/{agent_id}/discover     (auth)   -> read the agent's latest discovery results
+- POST /api/agents/{agent_id}/scan         (auth)   -> ask a paired box to run ONVIF discovery now
+- GET  /api/agents/{agent_id}/onboarding-status (auth) -> derived wizard step
+- GET  /api/agents/{agent_id}/walk-test    (auth)   -> poll for a real event since a timestamp
+- POST /api/agents/{agent_id}/nvr-channels (auth)   -> enumerate an NVR's channels from one credential prompt
+- GET  /api/agents/me/nvr-credentials      (agent)  -> delete-on-read fetch of the NVR creds for that job
+- POST /api/agents/me/channels             (agent)  -> agent pushes enumerated NVR channels (own key, not merged into discovery)
+- GET  /api/agents/{agent_id}/channels     (auth)   -> read the agent's latest enumerated NVR channels
 - POST /api/agents/{agent_id}/cameras      (auth)   -> register a camera bound to the agent
 - GET  /api/agents/me/resolve-jobs         (agent)  -> drain pending ONVIF GetStreamUri jobs
 - POST /api/agents/me/resolve-jobs/{id}    (agent)  -> agent reports resolved RTSP URL
@@ -17,10 +24,11 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.agent_control import registry
 from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_agent_from_token, get_current_user, scope_to_sites
@@ -28,6 +36,7 @@ from app.core.redis import get_redis
 from app.models.agent import Agent
 from app.models.camera import Camera
 from app.models.camera_setup import CameraSetupProposal
+from app.models.event import Event
 from app.models.organization import Organization
 from app.models.site import Site
 from app.models.user import User
@@ -35,9 +44,14 @@ from app.schemas.agent import (
     AgentDetailResponse,
     AgentListResponse,
     AgentSummary,
+    ChannelsPushRequest,
+    ChannelsResponse,
     DiscoveredDevice,
     DiscoverPushRequest,
     DiscoverResponse,
+    NvrChannelsRequest,
+    NvrCredentialsResponse,
+    OnboardingStatusResponse,
     PairCodeRequest,
     PairCodeResponse,
     PairRequest,
@@ -47,11 +61,18 @@ from app.schemas.agent import (
     ResolveJob,
     ResolveJobsResponse,
     ResolveResultRequest,
+    WalkTestResponse,
 )
 from app.schemas.camera_setup import SetupJob, SetupJobsResponse, SetupResultRequest
 from app.services.camera_setup.validator import validate_proposal
 from app.services.device_token_service import DeviceTokenService
+from app.services.onboarding_status_service import (
+    OnboardingStatusService,
+    _discovery_key,
+    walk_test_key,
+)
 from app.services.pairing_service import PairingService
+from app.services.snapshot_urls import signed_latest_frame_url
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -202,11 +223,222 @@ async def get_agent(
     )
 
 
+@router.get("/{agent_id}/onboarding-status", response_model=OnboardingStatusResponse)
+async def get_onboarding_status(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> OnboardingStatusResponse:
+    """One source of truth for the onboarding wizard's current step."""
+    agent = await _load_agent_for_user(agent_id, user, db)
+    svc = OnboardingStatusService(db)
+    payload = await svc.status(agent)
+    for cam in payload["cameras"]:
+        cam["snapshot_url"] = await signed_latest_frame_url(cam["camera_id"])
+    return OnboardingStatusResponse(**payload)
+
+
+@router.post("/{agent_id}/scan", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_scan(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ask a paired box to run ONVIF discovery right now.
+
+    202, not 200: the scan has been asked for, not completed. Results arrive
+    asynchronously at POST /api/agents/me/discovered and surface through the
+    onboarding-status endpoint.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    try:
+        await registry.send_command(agent.id, {"type": "scan_now"})
+    except ConnectionError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The box is not connected right now. Check its power and network.",
+        )
+    return {"status": "scanning"}
+
+
+@router.get("/{agent_id}/walk-test", response_model=WalkTestResponse)
+async def walk_test(
+    agent_id: uuid.UUID,
+    since: datetime,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WalkTestResponse:
+    """Look for a real detection since the customer started walking the site.
+
+    The frontend polls this for up to two minutes after "Send test
+    notification". The first match is written to Redis with no TTL, so a
+    box that has proven itself once keeps reporting `alert_verified` /
+    `protected` on every later visit rather than asking the customer to
+    walk the site again.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    since_utc = since if since.tzinfo is not None else since.replace(tzinfo=timezone.utc)
+
+    camera_rows = await db.execute(
+        select(Camera.id).where(Camera.agent_id == agent.id, Camera.deleted_at.is_(None))
+    )
+    camera_ids = [row[0] for row in camera_rows.all()]
+    if not camera_ids:
+        return WalkTestResponse(passed=False)
+
+    event_row = await db.execute(
+        select(Event)
+        .where(Event.camera_id.in_(camera_ids), Event.timestamp > since_utc)
+        .order_by(Event.timestamp.asc())
+        .limit(1)
+    )
+    event = event_row.scalar_one_or_none()
+    if event is None:
+        return WalkTestResponse(passed=False)
+
+    redis = await get_redis()
+    await redis.set(walk_test_key(agent.id), "1")
+    return WalkTestResponse(passed=True, event_id=event.id, detected_at=event.timestamp)
+
+
+NVR_CREDS_TTL_SECONDS = 120
+
+
+def _nvr_creds_key(agent_id: uuid.UUID) -> str:
+    return f"agent:nvr_creds:{agent_id}"
+
+
+@router.post("/{agent_id}/nvr-channels", status_code=status.HTTP_202_ACCEPTED)
+async def resolve_nvr_channels(
+    agent_id: uuid.UUID,
+    payload: NvrChannelsRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Enumerate an NVR's channels using credentials supplied once.
+
+    The credentials are written to Redis with a short TTL purely so the
+    agent's next poll can pick them up, and are deleted server-side the
+    moment the agent's GET /me/nvr-credentials reads them. They are never
+    written to Postgres and never logged: an NVR password is the customer's
+    whole security perimeter, and a support engineer reading logs must not
+    be able to see it.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    redis = await get_redis()
+    key = _nvr_creds_key(agent.id)
+    await redis.setex(
+        key,
+        NVR_CREDS_TTL_SECONDS,
+        json.dumps({
+            "xaddr": payload.xaddr,
+            "username": payload.username,
+            "password": payload.password.get_secret_value(),
+        }),
+    )
+    try:
+        await registry.send_command(agent.id, {"type": "resolve_channels"})
+    except ConnectionError:
+        # Nobody is going to poll for these credentials now — don't leave
+        # them sitting in Redis for the rest of the TTL window.
+        await redis.delete(key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The box is not connected right now.",
+        )
+    except BaseException:
+        # Anything else — including asyncio.CancelledError from a client
+        # that disconnects mid-await, which is NOT an Exception subclass
+        # and would otherwise sail past a plain `except ConnectionError`
+        # and leave the password sitting in Redis for the rest of the TTL.
+        # The non-negotiable is "a TTL on every error path", not just the
+        # one error path we happened to anticipate.
+        await redis.delete(key)
+        raise
+    return {"status": "resolving"}
+
+
+@router.get("/me/nvr-credentials", response_model=NvrCredentialsResponse)
+async def get_nvr_credentials(
+    response: Response,
+    agent: Agent = Depends(get_agent_from_token),
+) -> NvrCredentialsResponse:
+    """Delete-on-read fetch of the NVR credentials staged for this agent.
+
+    Deleting happens here, server-side, in the same call that returns the
+    payload — not left to the agent to do afterwards. If the agent crashes
+    between reading the response and finishing its ONVIF calls, the
+    password must not still be sitting in Redis for the remainder of the
+    TTL window. A second fetch (retry, duplicate poll, crash-and-restart)
+    finds nothing and gets 404, never a stale copy of the password.
+
+    ``Cache-Control: no-store`` (+ legacy ``Pragma: no-cache``) because this
+    is the one endpoint in the system that returns a customer's plaintext
+    credential over a 200 GET — a response shape that's heuristically
+    cacheable by an intermediary proxy with no explicit directive telling
+    it not to.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    redis = await get_redis()
+    key = _nvr_creds_key(agent.id)
+    raw = await redis.getdel(key)
+    if raw is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no pending credentials")
+    data = json.loads(raw)
+    return NvrCredentialsResponse(**data)
+
+
+CHANNELS_TTL_SECONDS = 600
+
+
+def _channels_key(agent_id: uuid.UUID) -> str:
+    return f"agent:channels:{agent_id}"
+
+
+@router.post("/me/channels", status_code=status.HTTP_204_NO_CONTENT)
+async def push_channels(
+    payload: ChannelsPushRequest,
+    agent: Agent = Depends(get_agent_from_token),
+) -> None:
+    """Agent-authenticated push of enumerated NVR channels.
+
+    Own Redis key (``agent:channels:{agent_id}``), deliberately separate
+    from the WS-Discovery snapshot at ``_discovery_key`` /
+    ``POST /me/discovered``. That endpoint does a whole-snapshot ``SET``
+    and is written by both the periodic discovery sweep (~every 60s) and
+    on-demand ``scan_now`` — posting channels there would have the very
+    next sweep silently wipe the channel list the wizard is showing.
+    """
+    r = await get_redis()
+    await r.set(
+        _channels_key(agent.id),
+        ChannelsResponse(xaddr=payload.xaddr, channels=payload.channels).model_dump_json(),
+        ex=CHANNELS_TTL_SECONDS,
+    )
+
+
+@router.get("/{agent_id}/channels", response_model=ChannelsResponse)
+async def get_channels(
+    agent_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ChannelsResponse:
+    """Return the agent's most recently enumerated NVR channels.
+
+    Served from the Redis snapshot pushed by ``POST /me/channels``. Empty
+    list means nothing enumerated yet (or the entry expired) — the wizard
+    then falls back to prompting for credentials again.
+    """
+    await _load_agent_for_user(agent_id, user, db)
+    r = await get_redis()
+    raw = await r.get(_channels_key(agent_id))
+    if not raw:
+        return ChannelsResponse(xaddr=None, channels=[])
+    return ChannelsResponse(**json.loads(raw))
+
+
 DISCOVERY_TTL_SECONDS = 600
-
-
-def _discovery_key(agent_id: uuid.UUID) -> str:
-    return f"agent:discovered:{agent_id}"
 
 
 @router.post("/me/discovered", status_code=status.HTTP_204_NO_CONTENT)
@@ -357,6 +589,7 @@ async def register_camera(
                 xaddr=payload.onvif_xaddr,
                 user=payload.user,
                 password=payload.password,
+                profile_token=payload.profile_token,
             ),
         )
 

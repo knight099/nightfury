@@ -1,9 +1,11 @@
 // Package devicepair implements device-initiated provisioning.
 //
 // The device:
-//  1. Generates a persistent device_id (UUID) and a random 4-digit code.
+//  1. Generates a persistent device_id (UUID) and a cryptographically secure
+//     6-digit code.
 //  2. Calls POST /api/devices/provision to register with the backend.
-//  3. Prints "NW-XXXX — enter at nightwatch.ai to link this device".
+//  3. Prints "NW-XXXXXX — enter at nightwatch.ai to link this device" and a
+//     QR code encoding a claim URL for the same box.
 //  4. Polls GET /api/devices/{device_id}/status every 5 s for up to 10 min.
 //  5. On "claimed", saves the returned token to disk and returns.
 package devicepair
@@ -11,10 +13,11 @@ package devicepair
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"time"
 )
@@ -55,9 +58,10 @@ type provisionReq struct {
 
 type provisionResp struct {
 	DeviceID  string `json:"device_id"`
-	Code      string `json:"code"` // "NW-XXXX"
+	Code      string `json:"code"` // "NW-XXXXXX"
 	Status    string `json:"status"`
 	ExpiresAt string `json:"expires_at"`
+	ClaimURL  string `json:"claim_url"`
 }
 
 type statusResp struct {
@@ -68,14 +72,23 @@ type statusResp struct {
 	AgentID     string `json:"agent_id"`
 }
 
-// GenerateCode returns a random 4-digit string (e.g. "0472").
-func GenerateCode() string {
-	return fmt.Sprintf("%04d", rand.Intn(10000))
+// GenerateCode returns a cryptographically secure 6-digit string.
+//
+// math/rand was wrong here twice over: it is not cryptographically secure,
+// and 4 digits is a 10,000-value space that a claim endpoint can be walked
+// through. Six digits from crypto/rand widens it 100x and removes the
+// predictability; the backend's rate limit covers the rest.
+func GenerateCode() (string, error) {
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", fmt.Errorf("generate pairing code: %w", err)
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
-// Provision registers the device with the backend and returns the display code
-// in "NW-XXXX" format.
-func (c *Client) Provision(ctx context.Context, deviceID, code, pubkey, machineID, version string) (string, error) {
+// Provision registers the device with the backend and returns the display
+// code (in "NW-XXXXXX" format) and the claim URL for the QR banner.
+func (c *Client) Provision(ctx context.Context, deviceID, code, pubkey, machineID, version string) (string, string, error) {
 	body, _ := json.Marshal(provisionReq{
 		DeviceID:  deviceID,
 		Code:      code,
@@ -85,22 +98,22 @@ func (c *Client) Provision(ctx context.Context, deviceID, code, pubkey, machineI
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.backendURL+"/api/devices/provision", bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("provision request failed: %w", err)
+		return "", "", fmt.Errorf("provision request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 201 {
-		return "", fmt.Errorf("provision failed: HTTP %d", resp.StatusCode)
+		return "", "", fmt.Errorf("provision failed: HTTP %d", resp.StatusCode)
 	}
 	var out provisionResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return out.Code, nil
+	return out.Code, out.ClaimURL, nil
 }
 
 // PollUntilClaimed polls the backend until the device is claimed or the
