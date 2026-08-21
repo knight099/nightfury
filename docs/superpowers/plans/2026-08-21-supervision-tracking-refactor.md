@@ -916,10 +916,17 @@ def __init__(
 def trigger(self, detections: Detections) -> npt.NDArray[np.bool_]: ...
 ```
 
-`triggering_anchors` **defaults to `(Position.BOTTOM_CENTER,)`** already —
-unlike `LineZone` (Task 4), no override is needed to match this
-pipeline's "a person's feet are in the zone" convention; the upstream
-default already agrees with it. `trigger()` returns one bool per
+`triggering_anchors` **defaults to `(Position.BOTTOM_CENTER,)`** —
+**correction, found during execution:** the plan originally assumed this
+matched the old `_zone_containing`'s convention and needed no override.
+It doesn't. The old ray-casting test used the bbox's own **center**
+(`(y1+y2)/2`), not its bottom edge — confirmed with a box straddling a
+zone boundary that only the center-based test matched. Since this feeds
+real intrusion alerts, Task 5's implementation overrides
+`triggering_anchors=(Position.CENTER,)` to preserve exact prior
+behavior; switching to feet-based zone membership is a real product
+decision, not something a library-swap refactor should ship as a side
+effect. `trigger()` returns one bool per
 detection, `True` where that detection's anchor falls inside the polygon
 — confirming the plan's original `pz.trigger(single)[0]` usage below is
 correct. `PolygonZone` also exposes `self.current_count` (updated on every
