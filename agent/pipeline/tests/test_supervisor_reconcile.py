@@ -149,6 +149,7 @@ class FakeWorker:
 def _make_supervisor(api_responses):
     sup = WorkerSupervisor.__new__(WorkerSupervisor)
     sup.workers = {}
+    sup.rejected = set()
     sup.gemini = None
     sup.api_client = FakeApiClient(api_responses)
 
