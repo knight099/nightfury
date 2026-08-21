@@ -244,3 +244,9 @@ class OnboardingStatusResponse(BaseModel):
     cameras: list[OnboardingCameraState] = []
     verified_camera_count: int = 0
     failure_reason: str | None = None
+
+
+class WalkTestResponse(BaseModel):
+    passed: bool
+    event_id: uuid.UUID | None = None
+    detected_at: datetime | None = None

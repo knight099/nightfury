@@ -8,6 +8,8 @@ Endpoints:
 - POST /api/agents/me/discovered           (agent)  -> agent pushes LAN ONVIF discovery results
 - POST /api/agents/{agent_id}/discover     (auth)   -> read the agent's latest discovery results
 - POST /api/agents/{agent_id}/scan         (auth)   -> ask a paired box to run ONVIF discovery now
+- GET  /api/agents/{agent_id}/onboarding-status (auth) -> derived wizard step
+- GET  /api/agents/{agent_id}/walk-test    (auth)   -> poll for a real event since a timestamp
 - POST /api/agents/{agent_id}/nvr-channels (auth)   -> enumerate an NVR's channels from one credential prompt
 - GET  /api/agents/me/nvr-credentials      (agent)  -> delete-on-read fetch of the NVR creds for that job
 - POST /api/agents/me/channels             (agent)  -> agent pushes enumerated NVR channels (own key, not merged into discovery)
@@ -34,6 +36,7 @@ from app.core.redis import get_redis
 from app.models.agent import Agent
 from app.models.camera import Camera
 from app.models.camera_setup import CameraSetupProposal
+from app.models.event import Event
 from app.models.organization import Organization
 from app.models.site import Site
 from app.models.user import User
@@ -58,6 +61,7 @@ from app.schemas.agent import (
     ResolveJob,
     ResolveJobsResponse,
     ResolveResultRequest,
+    WalkTestResponse,
 )
 from app.schemas.camera_setup import SetupJob, SetupJobsResponse, SetupResultRequest
 from app.services.camera_setup.validator import validate_proposal
@@ -65,6 +69,7 @@ from app.services.device_token_service import DeviceTokenService
 from app.services.onboarding_status_service import (
     OnboardingStatusService,
     _discovery_key,
+    walk_test_key,
 )
 from app.services.pairing_service import PairingService
 from app.services.snapshot_urls import signed_latest_frame_url
@@ -254,6 +259,46 @@ async def trigger_scan(
             detail="The box is not connected right now. Check its power and network.",
         )
     return {"status": "scanning"}
+
+
+@router.get("/{agent_id}/walk-test", response_model=WalkTestResponse)
+async def walk_test(
+    agent_id: uuid.UUID,
+    since: datetime,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WalkTestResponse:
+    """Look for a real detection since the customer started walking the site.
+
+    The frontend polls this for up to two minutes after "Send test
+    notification". The first match is written to Redis with no TTL, so a
+    box that has proven itself once keeps reporting `alert_verified` /
+    `protected` on every later visit rather than asking the customer to
+    walk the site again.
+    """
+    agent = await _load_agent_for_user(agent_id, user, db)
+    since_utc = since if since.tzinfo is not None else since.replace(tzinfo=timezone.utc)
+
+    camera_rows = await db.execute(
+        select(Camera.id).where(Camera.agent_id == agent.id, Camera.deleted_at.is_(None))
+    )
+    camera_ids = [row[0] for row in camera_rows.all()]
+    if not camera_ids:
+        return WalkTestResponse(passed=False)
+
+    event_row = await db.execute(
+        select(Event)
+        .where(Event.camera_id.in_(camera_ids), Event.timestamp > since_utc)
+        .order_by(Event.timestamp.asc())
+        .limit(1)
+    )
+    event = event_row.scalar_one_or_none()
+    if event is None:
+        return WalkTestResponse(passed=False)
+
+    redis = await get_redis()
+    await redis.set(walk_test_key(agent.id), "1")
+    return WalkTestResponse(passed=True, event_id=event.id, detected_at=event.timestamp)
 
 
 NVR_CREDS_TTL_SECONDS = 120

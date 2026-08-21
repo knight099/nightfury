@@ -37,7 +37,8 @@ def _discovery_key(agent_id: uuid.UUID) -> str:
     return f"agent:discovered:{agent_id}"
 
 
-def _walk_test_key(agent_id: uuid.UUID) -> str:
+def walk_test_key(agent_id: uuid.UUID) -> str:
+    """Shared with the walk-test route in api/agents.py, which sets this key."""
     return f"agent:walktest_passed:{agent_id}"
 
 
@@ -73,7 +74,7 @@ class OnboardingStatusService:
             except (ValueError, TypeError):
                 discovered_count = 0
 
-        walk_passed = bool(await redis.get(_walk_test_key(agent.id)))
+        walk_passed = bool(await redis.get(walk_test_key(agent.id)))
 
         camera_states = [
             {
