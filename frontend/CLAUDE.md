@@ -166,12 +166,16 @@ Vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_RELAY_URL`, `NEXT_PUBLIC_AGENT_DOWNLOA
 **do not enable it in any environment real users can reach** until it has been exercised against
 real data. Still missing from V2 while the flag is on: agentic camera setup (`/setup`).
 
-Ported to V2 so far: sites (`/app/sites`), camera onboarding — direct RTSP, device claim, and DIY
-agent pairing (`/app/cameras/connect`) — activity + event detail with approve/reject feedback and
-incident status (`/app/activity`, `/app/activity/[id]`), alert rule CRUD (`/app/alerts`), fleet
-(`/app/fleet`), video wall (`/app/wall`), usage (`/app/usage`), test AI (`/app/test-camera`). Because the flag redirects every legacy route to `/app`, anything not on
-that list is unreachable — not merely inconvenient — while the flag is on. Shared V2 styling
-primitives live in `components/v2/ui.tsx`; use them rather than re-deriving the oklch palette.
+Ported to V2 so far: sites (`/app/sites`), camera onboarding (`/app/cameras/connect`) — direct
+RTSP, device claim, and DIY agent pairing choose the connection method, and device claim/pairing
+now hand off into a guided wizard (`components/v2/onboarding/WizardHost.tsx`) driven entirely by
+`GET /api/agents/{id}/onboarding-status` rather than the old client-tracked register/done steps —
+activity + event detail with approve/reject feedback and incident status (`/app/activity`,
+`/app/activity/[id]`), alert rule CRUD (`/app/alerts`), fleet (`/app/fleet`), video wall
+(`/app/wall`), usage (`/app/usage`), test AI (`/app/test-camera`). Because the flag redirects every
+legacy route to `/app`, anything not on that list is unreachable — not merely inconvenient — while
+the flag is on. Shared V2 styling primitives live in `components/v2/ui.tsx`; use them rather than
+re-deriving the oklch palette.
 
 ## Critical Rules
 - NEVER use light mode colors — this is a dark-only UI
