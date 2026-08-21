@@ -2,6 +2,7 @@ import type {
   AgentSummary,
   AlertRule,
   Camera,
+  ChannelsResponse,
   ChatMessage,
   CompileSequenceMessage,
   CompileSequenceResponse,
@@ -13,10 +14,13 @@ import type {
   DiscoverResponse,
   Event,
   EventStats,
+  OnboardingStatusResponse,
   PaginatedResponse,
   PairCodeResponse,
   Site,
+  TestNotificationResponse,
   User,
+  WalkTestResponse,
   WhatsAppAlertContact,
   FleetResponse,
   CameraConnection,
@@ -557,7 +561,14 @@ class ApiClient {
 
   async registerAgentCameraFromOnvif(
     agentId: string,
-    body: { name: string; site_id?: string; onvif_xaddr: string; user?: string; pass?: string }
+    body: {
+      name: string;
+      site_id?: string;
+      onvif_xaddr: string;
+      user?: string;
+      pass?: string;
+      profile_token?: string;
+    }
   ): Promise<{ camera_id: string; status: string }> {
     return this.request<{ camera_id: string; status: string }>(`/api/agents/${agentId}/cameras`, {
       method: "POST",
@@ -571,6 +582,40 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ code, ...(orgId ? { org_id: orgId } : {}) }),
     });
+  }
+
+  // ─── Guided onboarding wizard ──────────────────────────────────────────
+
+  async getOnboardingStatus(agentId: string): Promise<OnboardingStatusResponse> {
+    return this.request<OnboardingStatusResponse>(`/api/agents/${agentId}/onboarding-status`);
+  }
+
+  async scanNow(agentId: string): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/agents/${agentId}/scan`, { method: "POST" });
+  }
+
+  async resolveNvrChannels(
+    agentId: string,
+    body: { xaddr: string; username: string; password: string }
+  ): Promise<{ status: string }> {
+    return this.request<{ status: string }>(`/api/agents/${agentId}/nvr-channels`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getNvrChannels(agentId: string): Promise<ChannelsResponse> {
+    return this.request<ChannelsResponse>(`/api/agents/${agentId}/channels`);
+  }
+
+  async sendTestNotification(): Promise<TestNotificationResponse> {
+    return this.request<TestNotificationResponse>("/api/alerts/test", { method: "POST" });
+  }
+
+  async getWalkTest(agentId: string, since: string): Promise<WalkTestResponse> {
+    return this.request<WalkTestResponse>(
+      `/api/agents/${agentId}/walk-test?since=${encodeURIComponent(since)}`
+    );
   }
 
   // ─── Agentic camera setup ────────────────────────────────────────────────

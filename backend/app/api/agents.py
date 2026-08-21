@@ -589,6 +589,7 @@ async def register_camera(
                 xaddr=payload.onvif_xaddr,
                 user=payload.user,
                 password=payload.password,
+                profile_token=payload.profile_token,
             ),
         )
 

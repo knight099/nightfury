@@ -126,10 +126,11 @@ func RunReporter(ctx context.Context, backendURL, deviceToken string, interval t
 
 // resolveJob mirrors the backend's ResolveJob schema.
 type resolveJob struct {
-	CameraID string `json:"camera_id"`
-	XAddr    string `json:"xaddr"`
-	User     string `json:"user"`
-	Password string `json:"pass"`
+	CameraID     string `json:"camera_id"`
+	XAddr        string `json:"xaddr"`
+	User         string `json:"user"`
+	Password     string `json:"pass"`
+	ProfileToken string `json:"profile_token"`
 }
 
 type resolveJobsResponse struct {
@@ -206,7 +207,13 @@ func RunResolver(ctx context.Context, backendURL, deviceToken string, interval t
 			slog.Warn("fetch resolve jobs failed", "err", err)
 		}
 		for _, job := range jobs {
-			rtspURL, rerr := ResolveStreamURI(ctx, job.XAddr, job.User, job.Password)
+			var rtspURL string
+			var rerr error
+			if job.ProfileToken != "" {
+				rtspURL, rerr = ResolveStreamURIForProfile(ctx, job.XAddr, job.User, job.Password, job.ProfileToken)
+			} else {
+				rtspURL, rerr = ResolveStreamURI(ctx, job.XAddr, job.User, job.Password)
+			}
 			result := resolveResultPayload{RTSPURL: rtspURL}
 			if rerr != nil {
 				slog.Warn("resolve stream uri failed", "camera_id", job.CameraID, "err", rerr)

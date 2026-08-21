@@ -356,6 +356,44 @@ func ResolveStreamURI(ctx context.Context, xaddr, username, password string) (st
 	return withCredentials(streamURI, username, password)
 }
 
+// ResolveStreamURIForProfile authenticates against the ONVIF device at
+// xaddr and returns the RTSP stream URI for one specific media profile,
+// identified by the token an earlier ResolveAllStreamURIs enumeration
+// returned. Skips GetProfiles entirely — the caller already knows the
+// token is valid, since the wizard's channel checklist only ever shows
+// tokens that channel enumeration confirmed resolve.
+func ResolveStreamURIForProfile(ctx context.Context, xaddr, username, password, profileToken string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	security, err := wsSecurityHeader(username, password)
+	if err != nil {
+		return "", err
+	}
+	streamBody := fmt.Sprintf(
+		`<trt:GetStreamUri xmlns:trt="%s" xmlns:tt="http://www.onvif.org/ver10/schema">
+  <trt:StreamSetup>
+    <tt:Stream>RTP-Unicast</tt:Stream>
+    <tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport>
+  </trt:StreamSetup>
+  <trt:ProfileToken>%s</trt:ProfileToken>
+</trt:GetStreamUri>`, mediaNS, profileToken,
+	)
+	resp, err := postSOAP(ctx, client, xaddr, getStreamURIAct, security, streamBody)
+	if err != nil {
+		return "", fmt.Errorf("GetStreamUri: %w", err)
+	}
+	streamURI, err := parseStreamURI(resp)
+	if err != nil {
+		return "", err
+	}
+	return withCredentials(streamURI, username, password)
+}
+
 // Channel is one ONVIF media profile enumerated from an NVR: enough to
 // identify a camera channel for the onboarding UI without carrying a
 // stream URI (and therefore without carrying credentials) back to the

@@ -154,6 +154,11 @@ class RegisterCameraRequest(BaseModel):
     user: str | None = None
     password: str | None = Field(default=None, alias="pass")
     brand: str | None = None
+    # Which media profile (NVR channel) to resolve, from a prior
+    # POST /{agent_id}/nvr-channels enumeration. None means "resolve
+    # whichever profile GetProfiles lists first" — the pre-multi-channel
+    # behaviour, kept for the manual/single-camera onvif_xaddr path.
+    profile_token: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -175,6 +180,10 @@ class ResolveJob(BaseModel):
     xaddr: str
     user: str | None = None
     password: str | None = Field(default=None, alias="pass")
+    # See RegisterCameraRequest.profile_token — threaded through so the
+    # agent resolves the exact channel the customer picked, not just
+    # whichever profile GetProfiles happens to list first.
+    profile_token: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
