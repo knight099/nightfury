@@ -7,9 +7,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, Copy, Link2, Loader2, Router, Tv2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Page, Card, Btn, Field, ErrorBox, BackLink, inputClass } from "@/components/v2/ui";
-import type { AgentSummary, DiscoveredDevice, PairCodeResponse, Site } from "@/types";
+import { WizardHost } from "@/components/v2/onboarding/WizardHost";
+import type { AgentSummary, PairCodeResponse, Site } from "@/types";
 
-type Step = "choice" | "direct" | "pair" | "wait" | "register" | "claim" | "done";
+type Step = "choice" | "direct" | "pair" | "wait" | "wizard" | "claim" | "done";
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL ?? "https://relay.nightwatch.ai";
 
@@ -68,27 +69,19 @@ export default function ConnectCameraPageV2() {
           pairStartedAt={pairStartedAt}
           onFound={(id) => {
             setAgentId(id);
-            setStep("register");
+            setStep("wizard");
           }}
           onLater={() => router.push("/app/cameras")}
         />
       )}
 
-      {step === "register" && agentId && (
-        <RegisterStep
-          agentId={agentId}
-          onDone={(cameraId) => {
-            setCreatedCameraId(cameraId);
-            setStep("done");
-          }}
-        />
-      )}
+      {step === "wizard" && agentId && <WizardHost agentId={agentId} />}
 
       {step === "claim" && (
         <ClaimStep
           onDone={(id) => {
             setAgentId(id);
-            setStep("register");
+            setStep("wizard");
           }}
         />
       )}
@@ -480,230 +473,6 @@ function WaitStep({
         </div>
       </div>
       <Btn onClick={onLater}>I&apos;ll do this later</Btn>
-    </Card>
-  );
-}
-
-function DiscoveredCameraCard({
-  agentId,
-  device,
-  siteId,
-  onDone,
-}: {
-  agentId: string;
-  device: DiscoveredDevice;
-  siteId: string;
-  onDone: (cameraId: string) => void;
-}) {
-  const [name, setName] = useState(device.name !== "unknown" ? device.name : "Camera");
-  const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.registerAgentCameraFromOnvif(agentId, {
-        name,
-        site_id: siteId || undefined,
-        onvif_xaddr: device.xaddr,
-        user: user || undefined,
-        pass: pass || undefined,
-      }),
-    onSuccess: (data) => {
-      // The agent resolves the stream URL on the LAN asynchronously; "pending"
-      // is a normal outcome, not a failure.
-      if (data.status === "pending") {
-        setPending(true);
-        return;
-      }
-      onDone(data.camera_id);
-    },
-    onError: (e: Error) => setErrorMsg(e.message || "Could not register camera."),
-  });
-
-  if (pending) {
-    return (
-      <div className="border border-[oklch(22%_0.015_265)] bg-[oklch(15%_0.015_265)] rounded-md p-3 text-[11.5px] text-[oklch(72%_0.01_265)]">
-        Finding {name}&apos;s stream URL — the agent is resolving this automatically on your
-        network. You can continue; it&apos;ll be ready in a few seconds.
-      </div>
-    );
-  }
-
-  return (
-    <div className="border border-[oklch(22%_0.015_265)] bg-[oklch(15%_0.015_265)] rounded-md p-3 space-y-2">
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Camera name"
-        className={inputClass}
-      />
-      <div className="text-[11px] text-[oklch(55%_0.01_265)] font-mono break-all">
-        {device.xaddr}
-      </div>
-      <div className="flex gap-2">
-        <input
-          value={user}
-          onChange={(e) => setUser(e.target.value)}
-          placeholder="NVR username"
-          className={inputClass}
-        />
-        <input
-          type="password"
-          value={pass}
-          onChange={(e) => setPass(e.target.value)}
-          placeholder="NVR password"
-          className={inputClass}
-        />
-      </div>
-      {errorMsg && (
-        <div className="text-[11.5px] text-[oklch(70.4%_0.191_22.216)]">{errorMsg}</div>
-      )}
-      <Btn variant="primary" onClick={() => mutation.mutate()} disabled={!name || mutation.isPending}>
-        {mutation.isPending ? "Enabling…" : "Enable"}
-      </Btn>
-    </div>
-  );
-}
-
-const BRAND_TEMPLATES = [
-  {
-    brand: "CP Plus",
-    url: "rtsp://admin:<password>@<nvr-ip>:554/cam/realmonitor?channel=1&subtype=0",
-  },
-  { brand: "Hikvision", url: "rtsp://admin:<password>@<nvr-ip>:554/Streaming/Channels/101" },
-  {
-    brand: "Dahua",
-    url: "rtsp://admin:<password>@<nvr-ip>:554/cam/realmonitor?channel=1&subtype=0",
-  },
-];
-
-function RegisterStep({ agentId, onDone }: { agentId: string; onDone: (id: string) => void }) {
-  const { sites, isLoading: sitesLoading, hasSites } = useSiteGuard();
-
-  const { data: discovered, isLoading: discovering } = useQuery({
-    queryKey: ["agent-discover", agentId],
-    queryFn: () => api.discoverAgentCameras(agentId),
-    refetchInterval: 5000,
-  });
-
-  const [name, setName] = useState("");
-  const [siteId, setSiteId] = useState("");
-  const [rtspUrl, setRtspUrl] = useState("");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showManual, setShowManual] = useState(false);
-
-  useEffect(() => {
-    if (!siteId && sites.length > 0) setSiteId(sites[0].id);
-  }, [sites, siteId]);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.registerAgentCamera(agentId, { name, site_id: siteId, rtsp_url: rtspUrl }),
-    onSuccess: (data) => onDone(data.camera_id),
-    onError: (e: Error) => setErrorMsg(e.message || "Could not register camera."),
-  });
-
-  if (sitesLoading) return <Card>Loading…</Card>;
-  if (!hasSites) return <NoSitesBlock />;
-
-  const hasDiscovered = !!discovered && discovered.devices.length > 0;
-
-  return (
-    <Card className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-semibold">Add a camera</h2>
-        <ProgressIndicator current={3} />
-      </div>
-      <p className="text-[13px] text-[oklch(72%_0.01_265)]">
-        Tell the agent which camera to pull from over your local network.
-      </p>
-
-      {discovering && !discovered && (
-        <div className="flex items-center gap-2 text-[13px] text-[oklch(72%_0.01_265)] py-2">
-          <Loader2 size={14} className="animate-spin" />
-          Scanning your network for cameras…
-        </div>
-      )}
-
-      {hasDiscovered && (
-        <div className="space-y-2">
-          <h3 className="text-[13px] font-semibold">Cameras found on your network</h3>
-          {discovered!.devices.map((d) => (
-            <DiscoveredCameraCard
-              key={d.uuid}
-              agentId={agentId}
-              device={d}
-              siteId={siteId}
-              onDone={onDone}
-            />
-          ))}
-        </div>
-      )}
-
-      {!hasDiscovered && !discovering && (
-        <p className="text-[13px] text-[oklch(72%_0.01_265)]">
-          No cameras found automatically — enter the RTSP URL manually below.
-        </p>
-      )}
-
-      {hasDiscovered && !showManual && (
-        <button
-          onClick={() => setShowManual(true)}
-          className="text-[13px] underline text-[oklch(72%_0.01_265)] hover:text-[oklch(97%_0.005_265)]"
-        >
-          I don&apos;t see my camera — enter manually
-        </button>
-      )}
-
-      {(showManual || !hasDiscovered) && (
-        <div className="space-y-3">
-          <Field label="Camera name">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Front door"
-              className={inputClass}
-            />
-          </Field>
-
-          <SiteSelect sites={sites} siteId={siteId} setSiteId={setSiteId} />
-
-          <Field label="RTSP URL (on your LAN)">
-            <input
-              value={rtspUrl}
-              onChange={(e) => setRtspUrl(e.target.value)}
-              placeholder="rtsp://192.168.1.10:554/Streaming/Channels/101"
-              className={`${inputClass} font-mono`}
-            />
-          </Field>
-
-          <details className="bg-[oklch(15%_0.015_265)] border border-[oklch(22%_0.015_265)] rounded-md">
-            <summary className="cursor-pointer px-3 py-2 text-[11.5px] text-[oklch(72%_0.01_265)] hover:text-[oklch(97%_0.005_265)]">
-              Brand templates
-            </summary>
-            <div className="px-3 pb-3 space-y-2 text-[11.5px]">
-              {BRAND_TEMPLATES.map((t) => (
-                <div key={t.brand}>
-                  <div className="text-[oklch(72%_0.01_265)]">{t.brand}</div>
-                  <code className="text-[oklch(85%_0.16_84)] break-all">{t.url}</code>
-                </div>
-              ))}
-            </div>
-          </details>
-
-          {errorMsg && <ErrorBox message={errorMsg} />}
-
-          <Btn
-            variant="primary"
-            onClick={() => mutation.mutate()}
-            disabled={!name || !rtspUrl || mutation.isPending}
-          >
-            {mutation.isPending ? "Adding…" : "Add camera"}
-          </Btn>
-        </div>
-      )}
     </Card>
   );
 }

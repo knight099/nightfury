@@ -279,6 +279,60 @@ export interface PairCodeResponse {
   expires_at: string;
 }
 
+// ─── Guided onboarding wizard ────────────────────────────────────────────
+
+export type OnboardingState =
+  | "waiting_claim"
+  | "paired"
+  | "scanning"
+  | "cameras_selected"
+  | "stream_verified"
+  | "zones_saved"
+  | "alert_verified"
+  | "protected";
+
+export interface OnboardingCameraState {
+  camera_id: string;
+  name: string;
+  status: "online" | "offline" | "error" | "unassigned";
+  first_frame_at: string | null;
+  snapshot_url: string | null;
+  zones_count: number;
+  failure_reason: string | null;
+}
+
+export interface OnboardingStatusResponse {
+  agent_id: string;
+  state: OnboardingState;
+  agent_online: boolean;
+  last_seen_at: string | null;
+  discovered_count: number;
+  cameras: OnboardingCameraState[];
+  verified_camera_count: number;
+  failure_reason: string | null;
+}
+
+export interface DiscoveredChannel {
+  profile_token: string;
+  name: string | null;
+}
+
+export interface ChannelsResponse {
+  xaddr: string | null;
+  channels: DiscoveredChannel[];
+}
+
+export interface WalkTestResponse {
+  passed: boolean;
+  event_id: string | null;
+  detected_at: string | null;
+}
+
+export interface TestNotificationResponse {
+  delivered: boolean;
+  detail: string;
+}
+
 // ─── Fleet (appliance capacity & camera coverage per site) ──────────────────
 
 export interface FleetCamera {
