@@ -6,6 +6,7 @@ import numpy as np
 
 from config import config
 from models import BoundingBox, CameraConfig, DetectedEvent
+from sv_vendor import Detections
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,33 @@ COCO_CLASSES = [
     "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
 ]
 
+def to_sv_detections(detections: list["YoloDetection"]) -> "Detections":
+    """Adapt this module's postprocessed YOLO output into Detections.
+
+    Purely a data reshape — no re-inference, no re-NMS (NMS already ran in
+    _postprocess via cv2.dnn.NMSBoxes). class_id is looked up positionally
+    against COCO_CLASSES so it round-trips through Detections.data
+    without needing a second class-name map downstream.
+    """
+    if not detections:
+        return Detections.empty()
+    xyxy = np.array(
+        [[d.bbox.x1, d.bbox.y1, d.bbox.x2, d.bbox.y2] for d in detections],
+        dtype=np.float32,
+    )
+    confidence = np.array([d.confidence for d in detections], dtype=np.float32)
+    class_id = np.array(
+        [COCO_CLASSES.index(d.coco_class) if d.coco_class in COCO_CLASSES else -1 for d in detections],
+        dtype=int,
+    )
+    return Detections(
+        xyxy=xyxy,
+        confidence=confidence,
+        class_id=class_id,
+        data={"coco_class": np.array([d.coco_class for d in detections])},
+    )
+
+
 YOLO_NMS_SCORE_THRESHOLD = 0.25
 YOLO_NMS_IOU_THRESHOLD = 0.45
 
@@ -224,6 +252,14 @@ class YoloDetector:
         except Exception as e:
             logger.warning(f"YOLO inference failed: {e}")
             return None
+
+    def detect_sv(self, frame) -> "Detections | None":
+        """Detections view of detect(frame) — same fail-soft contract:
+        None means inference errored (escalate), not "nothing found"."""
+        detections = self.detect(frame)
+        if detections is None:
+            return None
+        return to_sv_detections(detections)
 
     def _letterbox(self, frame, size: int):
         h, w = frame.shape[:2]
