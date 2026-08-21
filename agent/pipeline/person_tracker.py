@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from sv_vendor import ByteTrack, Detections
+from sv_vendor.smoother import DetectionsSmoother
 
 from pose_detector import PersonPose
 
@@ -43,6 +44,11 @@ class PersonTracker:
             lost_track_buffer=round(ttl_seconds * frame_rate),
             frame_rate=frame_rate,
         )
+        # 3 frames, not upstream's default 5: this pipeline samples at
+        # 1-5fps, so 5 frames of smoothing lag can be up to 5 seconds
+        # behind real motion at idle rate. 3 keeps lag under 3 seconds
+        # while still damping single-frame jitter.
+        self._smoother = DetectionsSmoother(length=3)
         self.sequence_state_factory = sequence_state_factory
         # ByteTrack keeps a track alive internally (in its own lost_tracks
         # pool, reassigning the same tracker_id on reappearance) for
@@ -73,6 +79,7 @@ class PersonTracker:
         confidence = np.array([1.0] * len(poses), dtype=np.float32)
         detections = Detections(xyxy=xyxy, confidence=confidence, class_id=np.zeros(len(poses), dtype=int))
         tracked = self._bytetrack.update_with_detections(detections)
+        tracked = self._smoother.update_with_detections(tracked)
 
         tracks: list[Track] = []
         for i in range(len(tracked)):

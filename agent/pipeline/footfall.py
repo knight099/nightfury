@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from sv_vendor import ByteTrack, Detections, LineZone, Point, Position
+from sv_vendor.smoother import DetectionsSmoother
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class FootfallCounter:
     def __init__(self, lines: list[CountingLine]):
         self.lines = lines
         self._bytetrack = ByteTrack()
+        self._smoother = DetectionsSmoother(length=3)
         self._zones = {
             line.name: LineZone(
                 start=Point(line.x1, line.y1),
@@ -95,6 +97,7 @@ class FootfallCounter:
         confidence = np.array([1.0] * len(person_boxes), dtype=np.float32)
         detections = Detections(xyxy=xyxy, confidence=confidence, class_id=np.zeros(len(person_boxes), dtype=int))
         tracked = self._bytetrack.update_with_detections(detections)
+        tracked = self._smoother.update_with_detections(tracked)
 
         for zone in self._zones.values():
             zone.trigger(tracked)
