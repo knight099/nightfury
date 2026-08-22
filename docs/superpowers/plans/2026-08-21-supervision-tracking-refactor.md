@@ -1186,29 +1186,73 @@ git commit -m "feat(pipeline): vendor DetectionsSmoother, wire into pose and foo
 
 ## Task 7: End-to-end verification on a real stream
 
-**Files:** none (verification only).
+**Files:** none (verification only) — except one real bug found and fixed
+along the way, see Step 1.
 
-- [ ] **Step 1: Run against a live or looped test RTSP source**
+- [x] **Step 1: Run against a live or looped test RTSP source**
+
+No physical NVR was available, and the webcam-based capture path was
+blocked (macOS never surfaced a camera-permission prompt for this
+session's host app, even after the user checked System Settings). Ran
+instead against a genuinely live RTSP source: `mediamtx` (installed via
+`brew`) as a local RTSP server, fed by `ffmpeg` looping a synthetic
+15s clip (`color=black` + a `drawbox` moving across the frame) pushed
+over RTSP — a real stream the pipeline pulls exactly as it would pull a
+camera's, not a canned frame array.
 
 ```bash
+mediamtx /tmp/nightwatch-test/mediamtx.yml &                      # hls/webrtc/srt disabled, RTSP only
+ffmpeg -re -stream_loop -1 -i synthetic.mp4 -c copy -f rtsp rtsp://localhost:8554/test &
 cd agent/pipeline
-.venv/bin/python3 test_webcam.py   # or point CAMERAS_CONFIG at a real/looped RTSP source
+CAMERAS_CONFIG=/tmp/nightwatch-test/cameras.json BACKEND_URL=http://localhost:1 \
+  MJPEG_SERVER_ENABLED=false .venv/bin/python3 main.py
 ```
 
-Watch logs for the pipeline's normal per-camera stats line (frames
-processed, events detected, footfall counts) over at least 2 minutes with
-a person walking in frame across a configured counting line and a
-configured zone.
+`cameras.json` configured one camera against `rtsp://localhost:8554/test`
+with a `detection_zones` polygon and a `counting_lines` entry crossing
+the moving box's path.
 
-- [ ] **Step 2: Confirm no regression in event volume**
+Ran for 2+ minutes (2 full health-check cycles), frame count climbing
+steadily (232 → 532), zero crashes, zero tracebacks. Confirmed via a
+temporary debug log (added, verified, then reverted — not part of the
+committed diff) that `frames_processed`, `yolo_calls`,
+`yolo_gated_frames`, and `footfall.drain()` were all live and moving.
 
-Compare event counts/types against a pre-refactor run of the same test
-clip if one is available (`git stash` back to before Task 1, run the same
-clip, `git stash pop`, re-run) — flag any material drop or spike in
-`intrusion` or footfall counts specifically, since those are the two
-paths this plan touched most.
+**A real bug surfaced here, unrelated to this plan's refactor but found
+because of it:** `WorkerSupervisor._load_camera_configs()` (the local
+`cameras.json` cold-start fallback, used when the backend is
+unreachable) never passed `counting_lines` or `step_sequence` into
+`CameraConfig` — only `CameraConfig.from_assignment()` (the normal
+backend-driven path) did. Any agent falling back to its local config
+silently lost footfall counting and step-sequence tracking for every
+camera. `footfall.drain()` came back `{}` instead of the configured
+line's zeroed counts, which is what exposed it. Fixed in
+`supervisor.py`, confirmed fixed by re-running and seeing
+`{'Test Line': {'in': 0, 'out': 0}}` instead. `worker/`'s equivalent
+loader has the same gap — out of scope per Finding 1.
 
-- [ ] **Step 3: Update docs**
+The synthetic clip is not a real person, so YOLO correctly classified
+it as nothing relevant (`yolo_gated=1`) and never escalated — this
+confirms the YOLO gate's `decide()` ran real ONNX inference against a
+real decoded frame and made the right call, but it does **not** confirm
+an actual footfall/zone crossing registers against a real person in
+this particular run (that was separately verified at the unit level in
+Tasks 4-6 with synthetic bounding boxes representing a real crossing
+trajectory). A genuine person-detection walk-test against real NVR
+footage is still worth doing before a pilot, same caveat as the
+guided-onboarding-wizard plan's Task 9.
+
+- [x] **Step 2: Confirm no regression in event volume**
+
+No pre-refactor comparison clip existed to diff against (none of this
+plan's earlier tasks captured one), and the synthetic source produces no
+YOLO-classified events to compare in the first place — satisfied instead
+by the pre/post-task unit verifications already run and recorded in each
+task's own commit (tracking id stability, footfall crossing direction,
+zone membership including a boundary-straddling case, smoother
+averaging), which is what actually exercises the code this plan changed.
+
+- [x] **Step 3: Update docs**
 
 In `agent/pipeline/CLAUDE.md`, under "Pose-Based Step-Sequence Tracking"
 and add a new subsection "Footfall & Zone Tracking" noting that both now

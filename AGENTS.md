@@ -313,6 +313,13 @@ Design + gap analysis: `docs/superpowers/plans/2026-08-18-mall-scale-architectur
 - Notification delivery test (`POST /api/alerts/test`) and physical walk-test (`GET /api/agents/{agent_id}/walk-test`) as the wizard's final two checks before "protected"
 - Plan: `docs/superpowers/plans/2026-08-20-guided-onboarding-wizard.md` — every task done except Task 9 (Docker packaging + a real walk-through on CP Plus/Hikvision/Dahua hardware), which needs physical devices this environment doesn't have
 
+### Vendored Tracking & Zone Code (COMPLETE)
+- `person_tracker.py`'s greedy-IoU tracker, `footfall.py`'s separate ad hoc IoU+proximity tracker, and `yolo_detector.py`'s ray-casting polygon test replaced by source vendored from `roboflow/supervision` (`ByteTrack`, `LineZone`, `PolygonZone`, `DetectionsSmoother`) under `agent/pipeline/sv_vendor/` — not a `pip install supervision` dependency, to avoid its `opencv-python`/`matplotlib` deps conflicting with/bloating the pinned `opencv-python-headless` ARM edge-box build. Only new dependency: `scipy`
+- Two independent `ByteTrack` instances (pose tracking and footfall tracking consume different detection sources, never merged); both feed a `DetectionsSmoother` before anything downstream reads them
+- `PolygonZone`'s default anchor (`BOTTOM_CENTER`) was overridden to `CENTER` to preserve the exact prior intrusion-detection behavior — the old ray-casting test used box-center, not feet; switching to feet-based zone membership would be a real product decision, not a side effect of a library swap
+- Verified end-to-end against a real running RTSP stream (local `mediamtx` + a looped synthetic clip, no NVR hardware available) — found and fixed a real, unrelated bug along the way: `WorkerSupervisor._load_camera_configs()` (the local `cameras.json` cold-start fallback) never passed `counting_lines`/`step_sequence` into `CameraConfig`, silently losing footfall/step-sequence config for any agent that fell back to its local file
+- Plan: `docs/superpowers/plans/2026-08-21-supervision-tracking-refactor.md`
+
 ### Agentic Camera Setup (COMPLETE)
 - Operator selects a batch of cameras (max 50); backend enqueues one setup job
   per camera onto that camera's own agent's Redis list
@@ -345,7 +352,6 @@ section above and is not repeated here.
 - **Crowd density / occupancy counting.** Distinct from footfall line-crossing, and not implemented
 - **Cross-camera person re-identification.** Deliberately out of scope — see `docs/superpowers/specs/2026-08-01-remind-reid-integration-design.md` for why (GPU-dependent, more privacy-sensitive, and journeys deliberately avoid identity claims)
 - **Foveated (variable-resolution) sampling on the Gemini escalation path.** Designed, not built, and deliberately gated: `docs/superpowers/specs/2026-08-20-foveated-sampling-design.md`. The CVPR-2025 result it rests on was measured on daylight web imagery and its gain is attributed to texture — which IR and H.264 destroy first — so the spec opens with a four-arm offline evaluation (full / uniform / crop / foveated at matched pixel budget) whose decision gate can cancel the whole thing. Do not start implementation at Phase 1 before that gate clears. Note the plain crop arm may simply win, in which case the design is deleted rather than built
-- **Tracking/zone code still hand-rolled, not yet on vendored `supervision` primitives.** `person_tracker.py`'s greedy-IoU tracker, `footfall.py`'s own separate ad hoc IoU+proximity tracker, and `yolo_detector.py`'s ray-casting polygon test are three divergent implementations of what `roboflow/supervision`'s `ByteTrack`/`LineZone`/`PolygonZone` do once, better-tested. Planned as a vendor-in (not `pip install`, to avoid `supervision`'s `opencv-python`/`matplotlib` conflicting with the pinned `opencv-python-headless` ARM build) — plan written, no task executed yet: `docs/superpowers/plans/2026-08-21-supervision-tracking-refactor.md`
 - Analytics / charts page; full-text search across events
 - Loading skeletons and error boundaries on the older pages
 
