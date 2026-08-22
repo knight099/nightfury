@@ -8,3 +8,9 @@ Pillow>=10.0.0
 pydantic>=2.9.0
 pydantic-settings>=2.5.0
 onnxruntime>=1.18.0
+# Needed by agent/pipeline/sv_vendor/byte_tracker (Kalman filter +
+# Hungarian-algorithm matching), vendored from roboflow/supervision — see
+# sv_vendor/VENDORED_FROM.md. The only new dependency the supervision
+# vendor adds; everything else it needs (numpy, opencv-python-headless)
+# is already pinned above.
+scipy>=1.10.0

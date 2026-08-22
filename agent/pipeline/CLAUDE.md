@@ -69,11 +69,22 @@
 
 ### Pose-Based Step-Sequence Tracking
 - For cameras with a non-empty `step_sequence` configured, a local YOLOv8-pose ONNX model (`pose_detector.py`, CPU-only via onnxruntime) runs after the YOLO gate stage, independent of its drop/emit/escalate decision
-- Detected people are tracked frame-to-frame with a greedy IoU tracker (`person_tracker.py`, no re-identification — a lost track starts a fresh sequence on reappearance)
+- Detected people are tracked frame-to-frame with `ByteTrack` (vendored from `roboflow/supervision`, see "Vendored Tracking & Zone Code" below), wrapped by `person_tracker.py::PersonTracker`. Still no re-identification — a track lost past ByteTrack's own `lost_track_buffer` window starts a fresh sequence on reappearance — but ByteTrack's Kalman-filter prediction survives brief single-frame misses that the old greedy-IoU matcher didn't
 - Each tracked person's (zone, pose label) is checked against the camera's ordered `step_sequence` by `sequence_engine.py`; skipping ahead, stalling past a step's `max_seconds`, or completing all steps emits a `step_skipped` / `step_timeout` / `sequence_completed` event directly — no Gemini call
 - Pose labels are geometric heuristics on 17 COCO keypoints: `standing`, `bending`, `crouching`, `sitting`, `reaching`, `unknown` (see `classify_pose` in `pose_detector.py`)
 - Model file lives at `models/yolov8n-pose.onnx` (path configurable via `POSE_MODEL_PATH`); if missing or fails to load, `PoseDetector.available` is `False` and the stage is skipped entirely — fail-soft, never crashes the worker
 - To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n-pose.pt').export(format='onnx')"`, then move the resulting `yolov8n-pose.onnx` into `models/`
+
+### Footfall & Zone Tracking
+- `footfall.py::FootfallCounter` runs its own, independent `ByteTrack` instance (does not share track ids with the pose-tracking one above — they consume detections from two different models: the pose model vs. the general YOLO gate's person boxes) plus one `LineZone` per configured counting line, both vendored from `roboflow/supervision`
+- `yolo_detector.py::_zone_containing` (intrusion-zone membership) runs on a cached `PolygonZone` per configured zone shape, replacing a hand-rolled ray-casting test. Explicitly overrides `triggering_anchors=(Position.CENTER,)` to match the prior box-center convention — `PolygonZone`'s upstream default is `BOTTOM_CENTER`, which would silently change which detections trigger an intrusion alert
+- Both `PersonTracker` and `FootfallCounter` run their tracked boxes through a private `DetectionsSmoother` (3-frame moving average) before anything downstream reads them, damping single-frame bbox jitter
+- This code is **vendored source, not a `supervision` pip dependency** — see "Vendored Tracking & Zone Code" below
+
+### Vendored Tracking & Zone Code
+- `sv_vendor/` holds trimmed source from `roboflow/supervision` (`Detections`, `ByteTrack`, `LineZone`, `PolygonZone`, `DetectionsSmoother`) — vendored rather than `pip install supervision` because that package declares `opencv-python` and `matplotlib` as hard dependencies, which conflict with / bloat the `opencv-python-headless` this ARM edge box needs. The vendor's real dependency list is `numpy` + `scipy` + the already-pinned `opencv-python-headless` — nothing else
+- `sv_vendor/VENDORED_FROM.md` records the exact upstream commit SHA and file/line range each module was vendored from
+- Design + rationale: `docs/superpowers/plans/2026-08-21-supervision-tracking-refactor.md`
 
 ### Frame Sampling
 - Two states: IDLE (1 fps to AI) and ACTIVE (5 fps to AI)
@@ -157,6 +168,9 @@ worker/
 ├── api_client.py        # Backend HTTP client
 ├── config.py            # Environment config
 ├── models.py            # Dataclasses
+├── person_tracker.py    # Pose/step-sequence tracking (ByteTrack-backed)
+├── footfall.py          # Line-crossing counting (ByteTrack + LineZone)
+├── sv_vendor/           # Vendored roboflow/supervision source — see VENDORED_FROM.md
 └── cameras.json         # Camera assignments
 ```
 

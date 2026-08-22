@@ -1,5 +1,9 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+import numpy as np
+from sv_vendor import ByteTrack, Detections
+from sv_vendor.smoother import DetectionsSmoother
 
 from pose_detector import PersonPose
 
@@ -15,74 +19,94 @@ class Track:
     missed_frames: int = 0
 
 
-def _iou(a, b) -> float:
-    """Intersection-over-union of two BoundingBox-like objects (x1,y1,x2,y2)."""
-    ix1 = max(a.x1, b.x1)
-    iy1 = max(a.y1, b.y1)
-    ix2 = min(a.x2, b.x2)
-    iy2 = min(a.y2, b.y2)
-    iw = max(0, ix2 - ix1)
-    ih = max(0, iy2 - iy1)
-    intersection = iw * ih
-    if intersection == 0:
-        return 0.0
-    area_a = max(0, a.x2 - a.x1) * max(0, a.y2 - a.y1)
-    area_b = max(0, b.x2 - b.x1) * max(0, b.y2 - b.y1)
-    union = area_a + area_b - intersection
-    if union <= 0:
-        return 0.0
-    return intersection / union
-
-
 class PersonTracker:
-    """Greedy IoU-based multi-person tracker. No re-identification: a track
-    lost for longer than track_ttl_seconds is dropped, and if that person
-    reappears they start a brand-new track (and a fresh sequence_state)."""
+    """Wraps ByteTrack for pose/step-sequence tracking.
 
-    def __init__(self, iou_threshold: float, ttl_seconds: float, sequence_state_factory):
-        self.iou_threshold = iou_threshold
-        self.ttl_seconds = ttl_seconds
+    ByteTrack tracks detections, not arbitrary payloads — it has no
+    concept of "this track's sequence_state". This class keeps that
+    mapping itself: sequence_state lives in self._sequence_states, keyed
+    by the tracker_id ByteTrack assigns, created on first sight of a new
+    id and dropped once ByteTrack stops reporting that id (which happens
+    automatically once it exceeds ByteTrack's own lost-track buffer — no
+    separate TTL bookkeeping needed here anymore).
+    """
+
+    def __init__(self, iou_threshold: float, ttl_seconds: float, sequence_state_factory, frame_rate: int = 5):
+        # iou_threshold/ttl_seconds kept as constructor args for call-site
+        # compatibility, mapped onto ByteTrack's real kwargs (confirmed
+        # from supervision/tracker/byte_tracker/core.py):
+        # minimum_matching_threshold plays the iou_threshold role,
+        # lost_track_buffer plays the ttl_seconds role but is frame-COUNTS,
+        # not seconds (upstream: max_time_lost = int(frame_rate / 30.0 *
+        # lost_track_buffer)) — so convert via frame_rate.
+        self._bytetrack = ByteTrack(
+            minimum_matching_threshold=iou_threshold,
+            lost_track_buffer=round(ttl_seconds * frame_rate),
+            frame_rate=frame_rate,
+        )
+        # 3 frames, not upstream's default 5: this pipeline samples at
+        # 1-5fps, so 5 frames of smoothing lag can be up to 5 seconds
+        # behind real motion at idle rate. 3 keeps lag under 3 seconds
+        # while still damping single-frame jitter.
+        self._smoother = DetectionsSmoother(length=3)
         self.sequence_state_factory = sequence_state_factory
-        self._tracks: dict = {}
-        self._next_id = 1
+        # ByteTrack keeps a track alive internally (in its own lost_tracks
+        # pool, reassigning the same tracker_id on reappearance) for
+        # lost_track_buffer frames — but update_with_detections only
+        # RETURNS tracks matched in the current call, so "not in this
+        # frame's result" does NOT mean "ByteTrack forgot it". Pruning on
+        # that basis would delete sequence_state on every single missed
+        # frame (occlusion, a dropped detection) even though ByteTrack
+        # reuses the id moments later. Prune on ttl_seconds instead,
+        # mirroring ByteTrack's own lost_track_buffer window, tracked via
+        # last-seen-at per sequence_state rather than per-frame presence.
+        self._ttl_seconds = ttl_seconds
+        self._sequence_states: dict[int, object] = {}
+        self._sequence_states_last_seen: dict[int, float] = {}
 
-    def update(self, poses: list, now: float) -> list:
-        # Drop tracks that have aged out first (before attempting to match).
-        for track_id in list(self._tracks.keys()):
-            if now - self._tracks[track_id].last_seen_at > self.ttl_seconds:
-                del self._tracks[track_id]
+    def update(self, poses: list[PersonPose], now: float) -> list[Track]:
+        if not poses:
+            self._bytetrack.update_with_detections(Detections.empty())
+            self._prune_sequence_states(now)
+            return []
 
-        unmatched_poses = list(range(len(poses)))
-        matched_tracks = []
+        xyxy = np.array(
+            [[p.bbox.x1, p.bbox.y1, p.bbox.x2, p.bbox.y2] for p in poses], dtype=np.float32
+        )
+        # Pose model has no per-box confidence surfaced here; ByteTrack
+        # requires a confidence array (used directly in
+        # update_with_detections), so use a constant.
+        confidence = np.array([1.0] * len(poses), dtype=np.float32)
+        detections = Detections(xyxy=xyxy, confidence=confidence, class_id=np.zeros(len(poses), dtype=int))
+        tracked = self._bytetrack.update_with_detections(detections)
+        tracked = self._smoother.update_with_detections(tracked)
 
-        # Greedy matching: for each existing track, pick the best remaining IoU match.
-        for track_id, track in list(self._tracks.items()):
-            best_iou = 0.0
-            best_idx = None
-            for idx in unmatched_poses:
-                iou = _iou(track.pose.bbox, poses[idx].bbox)
-                if iou > best_iou:
-                    best_iou = iou
-                    best_idx = idx
-            if best_idx is not None and best_iou >= self.iou_threshold:
-                track.pose = poses[best_idx]
-                track.last_seen_at = now
-                track.missed_frames = 0
-                unmatched_poses.remove(best_idx)
-                matched_tracks.append(track)
-            else:
-                track.missed_frames += 1
-
-        # Any pose left over starts a new track.
-        for idx in unmatched_poses:
-            track = Track(
-                track_id=self._next_id,
-                pose=poses[idx],
-                sequence_state=self.sequence_state_factory(),
-                last_seen_at=now,
+        tracks: list[Track] = []
+        for i in range(len(tracked)):
+            track_id = int(tracked.tracker_id[i])
+            if track_id not in self._sequence_states:
+                self._sequence_states[track_id] = self.sequence_state_factory()
+            self._sequence_states_last_seen[track_id] = now
+            # Match this tracked box back to its source PersonPose by
+            # nearest xyxy — ByteTrack reorders/filters, so index i on
+            # `tracked` does not line up with index i on `poses`.
+            tx1, ty1, tx2, ty2 = tracked.xyxy[i]
+            pose = min(
+                poses,
+                key=lambda p: abs(p.bbox.x1 - tx1) + abs(p.bbox.y1 - ty1) + abs(p.bbox.x2 - tx2) + abs(p.bbox.y2 - ty2),
             )
-            self._next_id += 1
-            self._tracks[track.track_id] = track
-            matched_tracks.append(track)
+            tracks.append(Track(
+                track_id=track_id,
+                pose=pose,
+                sequence_state=self._sequence_states[track_id],
+                last_seen_at=now,
+            ))
 
-        return matched_tracks
+        self._prune_sequence_states(now)
+        return tracks
+
+    def _prune_sequence_states(self, now: float) -> None:
+        for track_id, last_seen in list(self._sequence_states_last_seen.items()):
+            if now - last_seen > self._ttl_seconds:
+                del self._sequence_states[track_id]
+                del self._sequence_states_last_seen[track_id]

@@ -6,6 +6,7 @@ import numpy as np
 
 from config import config
 from models import BoundingBox, CameraConfig, DetectedEvent
+from sv_vendor import Detections, PolygonZone, Position
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,11 @@ class YoloDetection:
 
 
 def point_in_polygon(x: float, y: float, points: list) -> bool:
-    """Ray-casting point-in-polygon test. points is a list of [x, y] pairs."""
+    """Ray-casting point-in-polygon test. points is a list of [x, y] pairs.
+
+    Kept — still used by camera_worker.py::_zone_for_bbox for the
+    pose/step-sequence zone lookup, which is out of scope for this
+    refactor (see Task 5 of the supervision-tracking-refactor plan)."""
     if len(points) < 3:
         return False
     inside = False
@@ -49,12 +54,42 @@ def point_in_polygon(x: float, y: float, points: list) -> bool:
     return inside
 
 
+# _zone_containing is called once per detection per frame, and camera
+# zones don't change frame-to-frame, so cache one PolygonZone per
+# distinct zone-points shape rather than reconstructing it on every call.
+_polygon_zone_cache: dict[tuple, "PolygonZone"] = {}
+
+
+def _get_polygon_zone(zone: dict) -> "PolygonZone | None":
+    points = zone.get("points", [])
+    if len(points) < 3:
+        return None
+    key = tuple(tuple(p) for p in points)
+    if key not in _polygon_zone_cache:
+        polygon = np.array(points, dtype=np.float32)
+        # Position.CENTER, not PolygonZone's default BOTTOM_CENTER: the
+        # old ray-casting _zone_containing tested the bbox's own center
+        # ((y1+y2)/2), not its bottom edge. Overriding to preserve that
+        # exact membership test — this feeds real intrusion alerts, so a
+        # library swap must not silently change which detections trigger
+        # one. Switching to feet-based zone membership may be a real
+        # future improvement, but it's a product decision, not a side
+        # effect of this refactor.
+        _polygon_zone_cache[key] = PolygonZone(polygon=polygon, triggering_anchors=(Position.CENTER,))
+    return _polygon_zone_cache[key]
+
+
 def _zone_containing(bbox: BoundingBox, zones: list) -> str | None:
-    cx = (bbox.x1 + bbox.x2) / 2
-    cy = (bbox.y1 + bbox.y2) / 2
+    single = Detections(
+        xyxy=np.array([[bbox.x1, bbox.y1, bbox.x2, bbox.y2]], dtype=np.float32),
+        confidence=np.array([1.0], dtype=np.float32),
+        class_id=np.zeros(1, dtype=int),
+    )
     for zone in zones:
-        points = zone.get("points", [])
-        if point_in_polygon(cx, cy, points):
+        pz = _get_polygon_zone(zone)
+        if pz is None:
+            continue
+        if pz.trigger(single)[0]:
             return zone.get("name", "unnamed")
     return None
 
@@ -182,6 +217,33 @@ COCO_CLASSES = [
     "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
 ]
 
+def to_sv_detections(detections: list["YoloDetection"]) -> "Detections":
+    """Adapt this module's postprocessed YOLO output into Detections.
+
+    Purely a data reshape — no re-inference, no re-NMS (NMS already ran in
+    _postprocess via cv2.dnn.NMSBoxes). class_id is looked up positionally
+    against COCO_CLASSES so it round-trips through Detections.data
+    without needing a second class-name map downstream.
+    """
+    if not detections:
+        return Detections.empty()
+    xyxy = np.array(
+        [[d.bbox.x1, d.bbox.y1, d.bbox.x2, d.bbox.y2] for d in detections],
+        dtype=np.float32,
+    )
+    confidence = np.array([d.confidence for d in detections], dtype=np.float32)
+    class_id = np.array(
+        [COCO_CLASSES.index(d.coco_class) if d.coco_class in COCO_CLASSES else -1 for d in detections],
+        dtype=int,
+    )
+    return Detections(
+        xyxy=xyxy,
+        confidence=confidence,
+        class_id=class_id,
+        data={"coco_class": np.array([d.coco_class for d in detections])},
+    )
+
+
 YOLO_NMS_SCORE_THRESHOLD = 0.25
 YOLO_NMS_IOU_THRESHOLD = 0.45
 
@@ -224,6 +286,14 @@ class YoloDetector:
         except Exception as e:
             logger.warning(f"YOLO inference failed: {e}")
             return None
+
+    def detect_sv(self, frame) -> "Detections | None":
+        """Detections view of detect(frame) — same fail-soft contract:
+        None means inference errored (escalate), not "nothing found"."""
+        detections = self.detect(frame)
+        if detections is None:
+            return None
+        return to_sv_detections(detections)
 
     def _letterbox(self, frame, size: int):
         h, w = frame.shape[:2]
