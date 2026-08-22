@@ -396,6 +396,8 @@ class WorkerSupervisor:
                 stream_key=cam.get("stream_key"),
                 enabled_events=cam.get("enabled_events", ["person", "vehicle", "intrusion"]),
                 detection_zones=cam.get("detection_zones", []),
+                step_sequence=cam.get("step_sequence", []),
+                counting_lines=cam.get("counting_lines", []),
                 sensitivity=cam.get("sensitivity", "medium"),
                 timezone=cam.get("timezone", "Asia/Kolkata"),
                 idle_fps=cam.get("idle_fps", config.idle_fps),
