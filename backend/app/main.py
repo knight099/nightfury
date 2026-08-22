@@ -28,6 +28,7 @@ from app.api.camera_setup import router as camera_setup_router
 from app.api.fleet import router as fleet_router
 from app.api.digests import router as digests_router
 from app.api.chat import router as chat_router
+from app.api.assistant import router as assistant_router
 from app.api.devices import router as devices_router
 from app.api.edge_uploads import router as edge_uploads_router
 from app.api.edge_credentials import router as edge_credentials_router
@@ -213,6 +214,7 @@ app.include_router(camera_connections_router)
 app.include_router(camera_setup_router)
 app.include_router(digests_router)
 app.include_router(chat_router)
+app.include_router(assistant_router)
 app.include_router(devices_router)
 app.include_router(edge_uploads_router)
 app.include_router(edge_credentials_router)
