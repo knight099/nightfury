@@ -453,3 +453,23 @@ export interface SetupRunSummary {
   pending: number;
   created_at: string;
 }
+
+// ─── Assistant tool calling ─────────────────────────────────────────────────
+
+export interface AssistantProposal {
+  id: string;
+  kind: "alert_rule" | "camera_connection";
+  /** Server-templated sentence — render verbatim, never re-derive from payload. */
+  summary: string;
+  payload: Record<string, unknown>;
+  status: "pending" | "applied" | "rejected" | "expired";
+  expires_at: string;
+}
+
+export interface AssistantMessageResponse {
+  conversation_id: string;
+  text: string;
+  proposals: AssistantProposal[];
+  navigate: string | null;
+  stopped_early: boolean;
+}

@@ -27,6 +27,7 @@ import type {
   Journey,
   SetupRun,
   SetupRunSummary,
+  AssistantMessageResponse,
 } from "@/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
@@ -645,6 +646,28 @@ class ApiClient {
     return this.request<SetupRun>(`/api/setup-runs/${runId}/approve-group`, {
       method: "POST",
       body: JSON.stringify({ scene_type: sceneType }),
+    });
+  }
+
+  // ─── Assistant tool calling ───────────────────────────────────────────────
+
+  async assistantMessage(body: { message: string; conversation_id?: string; current_route?: string }) {
+    return this.request<AssistantMessageResponse>("/api/assistant/message", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async applyProposal(id: string) {
+    return this.request<{ status: string; created_id: string | null }>(
+      `/api/assistant/proposals/${id}/apply`,
+      { method: "POST" }
+    );
+  }
+
+  async rejectProposal(id: string) {
+    return this.request<{ status: string }>(`/api/assistant/proposals/${id}/reject`, {
+      method: "POST",
     });
   }
 }
