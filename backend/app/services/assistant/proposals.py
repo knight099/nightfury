@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from app.core.dependencies import require_role
+from app.core.dependencies import require_role, scope_to_sites
 from app.models.camera import Camera
 from app.models.camera_connection import CameraConnection
 from app.models.alert_rule import AlertRule
@@ -71,11 +71,25 @@ def render_summary(kind: str, payload: dict, names: dict[str, str]) -> str:
 
 
 async def _resolve_camera_names(ctx: ToolContext, camera_ids: set[uuid.UUID]) -> dict[str, str]:
+    """Resolve camera display names, scoped to what this user can see.
+
+    Runs at propose time, before any apply-time check — so an id the caller
+    cannot see (wrong org, or a site outside their `sites_access`) must not
+    resolve to a real name here. `render_summary` already falls back to the
+    neutral "a camera" placeholder for any id missing from this dict, so an
+    out-of-scope id renders identically to a garbage/nonexistent one — it
+    cannot be distinguished from a real, resolvable camera by reading the
+    summary.
+    """
     if not camera_ids:
         return {}
-    rows = (
-        await ctx.db.execute(select(Camera.id, Camera.name).where(Camera.id.in_(camera_ids)))
-    ).all()
+    q = select(Camera.id, Camera.name).where(
+        Camera.id.in_(camera_ids),
+        Camera.org_id == ctx.org_id,
+        Camera.deleted_at.is_(None),
+    )
+    q = scope_to_sites(q, Camera.site_id, ctx.user)
+    rows = (await ctx.db.execute(q)).all()
     return {str(row[0]): row[1] for row in rows}
 
 
@@ -165,17 +179,15 @@ async def _apply_camera_connection(db, user, prop: Proposal) -> uuid.UUID:
     if prop.site_id is None:
         raise HTTPException(status_code=409, detail="Proposal is missing a site")
 
-    # Mirrors backend/app/api/camera_connections.py:create_connection's
-    # _load_site + the ownership/pair checks that follow it.
-    site = (
-        await db.execute(
-            select(Site).where(
-                Site.id == prop.site_id,
-                Site.org_id == user.org_id,
-                Site.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
+    # Mirrors backend/app/api/camera_connections.py:_load_site exactly (org
+    # filter + scope_to_sites), not a hand-rolled variant — a site-restricted
+    # admin must not be able to apply a connection proposal for a site
+    # outside their sites_access, the same as the route enforces.
+    site_q = select(Site).where(Site.id == prop.site_id, Site.deleted_at.is_(None))
+    if user.role != "super_admin":
+        site_q = site_q.where(Site.org_id == user.org_id)
+    site_q = scope_to_sites(site_q, Site.id, user)
+    site = (await db.execute(site_q)).scalar_one_or_none()
     if site is None:
         raise HTTPException(status_code=404, detail="Site not found")
 
