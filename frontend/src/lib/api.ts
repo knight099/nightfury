@@ -32,6 +32,25 @@ import type {
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://nightfury-backend.vercel.app";
 
+/**
+ * Thrown by ApiClient.request() (and the two hand-rolled fetch helpers below)
+ * on any non-2xx response. Carries the HTTP status so callers can branch on
+ * it (e.g. 429 daily-AI-budget vs 503 Gemini-unavailable) instead of string-
+ * matching `.message`, which breaks the moment the backend's JSON `detail`
+ * doesn't contain the literal "HTTP <code>". Subclasses Error, so every
+ * existing `catch (e) { e instanceof Error ? e.message : ... }` caller keeps
+ * working unchanged.
+ */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 type CreateCameraRequest = {
   name: string;
   site_id: string;
@@ -68,7 +87,7 @@ class ApiClient {
 
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: "Request failed" }));
-      throw new Error(error.detail || `HTTP ${res.status}`);
+      throw new ApiError(error.detail || `HTTP ${res.status}`, res.status);
     }
 
     if (res.status === 204) return undefined as T;
@@ -157,7 +176,7 @@ class ApiClient {
     if (res.status === 404) return null;
     if (!res.ok) {
       const error = await res.json().catch(() => ({ detail: "Request failed" }));
-      throw new Error(error.detail || `HTTP ${res.status}`);
+      throw new ApiError(error.detail || `HTTP ${res.status}`, res.status);
     }
     return res.json();
   }
@@ -665,8 +684,9 @@ class ApiClient {
     );
   }
 
+  /** Route is status_code=204 with no body — resolves to undefined. */
   async rejectProposal(id: string) {
-    return this.request<{ status: string }>(`/api/assistant/proposals/${id}/reject`, {
+    return this.request<void>(`/api/assistant/proposals/${id}/reject`, {
       method: "POST",
     });
   }

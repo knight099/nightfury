@@ -3,8 +3,27 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import {
+  Building2,
+  Grid3x3,
+  Server,
+  FileText,
+  Video,
+  BarChart3,
+  Bot,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
+
+const MORE_LINKS = [
+  { href: "/app/sites", label: "Sites", icon: Building2, description: "Manage locations and site details" },
+  { href: "/app/agents", label: "Agents", icon: Bot, description: "Edge boxes and their pairing status" },
+  { href: "/app/wall", label: "Video wall", icon: Grid3x3, description: "Multi-camera live view" },
+  { href: "/app/fleet", label: "Fleet", icon: Server, description: "Appliance capacity and coverage" },
+  { href: "/app/digests", label: "Digests", icon: FileText, description: "Scheduled and on-demand recaps" },
+  { href: "/app/test-camera", label: "Test AI", icon: Video, description: "Try detection against a sample clip" },
+  { href: "/app/usage", label: "Usage", icon: BarChart3, description: "AI spend and call volume" },
+];
 
 export default function SettingsPageV2() {
   const queryClient = useQueryClient();
@@ -164,11 +183,24 @@ export default function SettingsPageV2() {
         </div>
       )}
 
-      <div className="text-base font-bold mb-3">Digest Preferences</div>
-      <div className="text-sm text-[oklch(80%_0.005_265)]">
-        <Link href="/app/digests" className="text-[oklch(85%_0.06_155)] hover:underline">
-          Configure digest schedules and delivery preferences →
-        </Link>
+      <div className="text-base font-bold mb-3">More</div>
+      <div className="text-[13px] text-[oklch(55%_0.01_265)] mb-4 max-w-[62ch] leading-relaxed">
+        The sidebar keeps only the daily-use pages. Everything else still lives here.
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {MORE_LINKS.map(({ href, label, icon: Icon, description }) => (
+          <Link
+            key={href}
+            href={href}
+            className="flex items-start gap-3 bg-[oklch(12%_0.015_265)] border border-[oklch(22%_0.015_265)] rounded-[14px] px-4 py-3.5 hover:border-[oklch(32%_0.015_265)] transition-colors"
+          >
+            <Icon size={18} className="text-[oklch(72%_0.01_265)] mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="text-[13.5px] font-semibold text-[oklch(90%_0.005_265)]">{label}</div>
+              <div className="text-[12px] text-[oklch(55%_0.01_265)] mt-0.5">{description}</div>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );
