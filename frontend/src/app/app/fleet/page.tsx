@@ -75,7 +75,7 @@ export default function FleetPageV2() {
           <select
             value={activeSiteId ?? ""}
             onChange={(e) => setSiteId(e.target.value)}
-            className={`${inputClass} w-auto shrink-0`}
+            className={`${inputClass} !w-auto shrink-0`}
           >
             {sites.map((s) => (
               <option key={s.id} value={s.id}>
@@ -208,7 +208,7 @@ function UnassignedPanel({
                 defaultValue=""
                 disabled={pinning}
                 onChange={(e) => e.target.value && onPin(camera.id, e.target.value)}
-                className={`${inputClass} w-auto text-[11.5px] py-1`}
+                className={`${inputClass} !w-auto text-[11.5px] py-1`}
               >
                 <option value="">Assign to…</option>
                 {withSpare.map((a) => (

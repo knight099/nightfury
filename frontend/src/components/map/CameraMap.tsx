@@ -8,6 +8,16 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { Camera, CameraConnection } from "@/types";
 
 /**
+ * Shared with the V2-styled shell (components/v2/CameraMapV2.tsx) so the two
+ * renderings of this page can look different without the privacy claim
+ * drifting between them.
+ */
+export const MAP_INTRO_COPY =
+  "Click two cameras to mark them as physically connected — a doorway, hallway or gate. Nightwatch uses these links to spot activity moving between cameras.";
+export const MAP_PRIVACY_CAVEAT =
+  "This links events by location and timing only. It does not recognise faces or identify people, so a linked path may or may not be the same person.";
+
+/**
  * Camera map — draw which cameras are physically connected.
  *
  * Click two cameras to link them ("joined by a hallway"). Those links are the
@@ -109,16 +119,8 @@ export function CameraMap({ className }: { className?: string }) {
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-[#F5F5F5]">Camera map</h1>
-          <p className="mt-1 max-w-2xl text-sm text-[#A3A3A3]">
-            Click two cameras to mark them as physically connected — a doorway,
-            hallway or gate. Nightwatch uses these links to spot activity moving
-            between cameras.
-          </p>
-          <p className="mt-1 max-w-2xl text-xs text-[#666666]">
-            This links events by location and timing only. It does not recognise
-            faces or identify people, so a linked path may or may not be the
-            same person.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm text-[#A3A3A3]">{MAP_INTRO_COPY}</p>
+          <p className="mt-1 max-w-2xl text-xs text-[#666666]">{MAP_PRIVACY_CAVEAT}</p>
         </div>
         <select
           value={activeSiteId ?? ""}

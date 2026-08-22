@@ -1,9 +1,10 @@
 "use client";
 
-import { CameraMap } from "@/components/map/CameraMap";
+import CameraMapV2 from "@/components/v2/CameraMapV2";
 
-// The v2 shell renders the same component as the live UI, so the two shells
-// cannot drift apart on a feature whose copy carries a privacy claim.
+// V2-styled rendering of the same data/logic as the V1 page
+// (components/map/CameraMap.tsx). The privacy-caveat copy is imported from
+// there rather than retyped, so the two shells can't drift on that claim.
 export default function MapPageV2() {
-  return <CameraMap />;
+  return <CameraMapV2 />;
 }

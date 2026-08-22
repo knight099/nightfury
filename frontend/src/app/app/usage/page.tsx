@@ -120,7 +120,7 @@ export default function UsagePageV2() {
               <select
                 value={orgDays}
                 onChange={(e) => setOrgDays(Number(e.target.value))}
-                className={`${inputClass} w-auto`}
+                className={`${inputClass} !w-auto`}
               >
                 <option value={1}>Last 24h</option>
                 <option value={7}>Last 7 days</option>

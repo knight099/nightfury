@@ -57,7 +57,7 @@ export default function WallPageV2() {
             <select
               value={activeSiteId ?? ""}
               onChange={(e) => setSiteId(e.target.value)}
-              className={`${inputClass} w-auto`}
+              className={`${inputClass} !w-auto`}
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -68,7 +68,7 @@ export default function WallPageV2() {
             <select
               value={cols}
               onChange={(e) => setCols(Number(e.target.value))}
-              className={`${inputClass} w-auto`}
+              className={`${inputClass} !w-auto`}
             >
               <option value={2}>2 across</option>
               <option value={3}>3 across</option>
