@@ -17,6 +17,7 @@ from app.models.digest_preferences import DigestPreferences
 from app.models.chat_message import ChatMessage
 from app.models.device_provision import DeviceProvision
 from app.models.audit_log import AuditLog
+from app.models.proposal import Proposal
 
 __all__ = [
     "Base",
@@ -38,4 +39,5 @@ __all__ = [
     "ChatMessage",
     "DeviceProvision",
     "AuditLog",
+    "Proposal",
 ]
