@@ -25,45 +25,26 @@
 
 ---
 
-## Task 0: Merge the divergent Alembic heads
+## Task 0: ~~Merge the divergent Alembic heads~~ — OBSOLETE, SKIP
 
-**Why first:** the migration history currently has **two heads** — `c9f4e2b71a58` (super_admin_org) and `c2e8a4b1d7f3` (agent_device_token_id). `alembic upgrade head` fails with "Multiple head revisions are present", so Task 1's migration cannot be applied until this is resolved. This is a pre-existing repo bug, not something this feature introduced.
+**Verified unnecessary before execution. Do not perform this task.**
 
-**Files:**
-- Create: `backend/alembic/versions/<generated>_merge_heads.py`
+This task was written on a false premise. A scan of `down_revision` values
+appeared to show two heads (`c9f4e2b71a58` and `c2e8a4b1d7f3`), but the scan's
+pattern only matched double-quoted values and missed
+`alembic/versions/7cfcfc949409_audit_log.py:17`, which declares
+`down_revision: Union[str, None] = 'c2e8a4b1d7f3'` in single quotes. That
+descendant means `c2e8a4b1d7f3` was never a head.
 
-- [ ] **Step 1: Confirm both heads**
+Alembic itself is the authority and reports a single head:
 
 ```bash
 cd backend && uv run alembic heads
+# c9f4e2b71a58 (head)
 ```
 
-Expected: two revisions listed. If only one is listed, this task is already done — skip to Task 1.
-
-- [ ] **Step 2: Generate the merge revision**
-
-```bash
-cd backend && uv run alembic merge -m "merge divergent heads" c9f4e2b71a58 c2e8a4b1d7f3
-```
-
-- [ ] **Step 3: Verify a single head**
-
-```bash
-cd backend && uv run alembic heads && uv run alembic upgrade head
-```
-
-Expected: one head; `upgrade head` completes without "Multiple head revisions".
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/alembic/versions/
-git commit -m "fix(db): merge divergent alembic heads
-
-alembic upgrade head failed with 'Multiple head revisions are present'
-because c9f4e2b71a58 and c2e8a4b1d7f3 branched from different parents.
-CLAUDE.md instructs operators to run this command, so it must work."
-```
+Task 1's migration therefore descends from `c9f4e2b71a58`, which
+`alembic revision -m` sets automatically. Proceed directly to Task 1.
 
 ---
 
@@ -1141,7 +1122,7 @@ The camera-tile/activity code moves to `FallbackDashboard` in Task 8 — verify 
 
 - [ ] **Step 3: Trim the sidebar to minimal chrome**
 
-In `SidebarV2.tsx`, reduce `navItems` to the five destinations that must remain reachable by hand:
+In `SidebarV2.tsx`, reduce `navItems` to the six destinations that must remain reachable by hand:
 
 ```typescript
 const navItems = [
