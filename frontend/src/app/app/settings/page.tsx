@@ -11,6 +11,7 @@ import {
   Video,
   BarChart3,
   Bot,
+  MessageSquare,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -23,6 +24,7 @@ const MORE_LINKS = [
   { href: "/app/digests", label: "Digests", icon: FileText, description: "Scheduled and on-demand recaps" },
   { href: "/app/test-camera", label: "Test AI", icon: Video, description: "Try detection against a sample clip" },
   { href: "/app/usage", label: "Usage", icon: BarChart3, description: "AI spend and call volume" },
+  { href: "/app/chat", label: "Ask (classic)", icon: MessageSquare, description: "The standalone Q&A page, scoped to a camera or event" },
 ];
 
 export default function SettingsPageV2() {
