@@ -14,6 +14,7 @@ turn is not a cap.
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from app.services.assistant.gemini import APPROX_COST_PER_TURN_USD
@@ -86,13 +87,34 @@ def _tool_result_turn(name: str, result: dict) -> Any:
     )
 
 
+def _current_time_notice() -> str:
+    """Build the per-turn "what time is it right now" notice.
+
+    The SYSTEM_PROMPT is a module-level constant built once at import time,
+    so baking today's date into it would be wrong on every subsequent day.
+    Instead this is computed fresh for each turn and injected into
+    ``contents`` here. Always UTC, and says so explicitly, so the model
+    never silently assumes the viewer's local timezone when resolving
+    relative-time phrases like "last night" or "today".
+    """
+    now = datetime.now(timezone.utc)
+    return (
+        "[Current date/time: "
+        f"{now.strftime('%Y-%m-%d %H:%M:%S')} UTC. "
+        "Use this to resolve relative time references like 'today', "
+        "'last night', or 'this week', and state the absolute date range "
+        "you are reporting on.]"
+    )
+
+
 def _build_contents(history: Sequence[ChatTurn], user_message: str) -> list:
     """Turn prior chat history plus the new user message into the initial
     ``contents`` list for the first model call of this turn.
 
     The system prompt is NOT included here — the client attaches it via
     ``config.system_instruction`` (Task 4), so prepending it into contents
-    would duplicate it.
+    would duplicate it. The current-time notice IS included here (as opposed
+    to the static SYSTEM_PROMPT) precisely because it must be fresh per turn.
     """
     from google.genai import types  # type: ignore
 
@@ -100,7 +122,15 @@ def _build_contents(history: Sequence[ChatTurn], user_message: str) -> list:
     for turn in history:
         role = "user" if turn.role == "user" else "model"
         contents.append(types.Content(role=role, parts=[types.Part.from_text(text=turn.content)]))
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
+    contents.append(
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(text=_current_time_notice()),
+                types.Part.from_text(text=user_message),
+            ],
+        )
+    )
     return contents
 
 
@@ -125,8 +155,21 @@ async def run_turn(*, client, spend, ctx: ToolContext, history, user_message: st
         response = await client.generate(contents=contents, tools=TOOL_DECLARATIONS)
         calls = _function_calls(response)
         if not calls:
+            text = (response.text or "").strip()
+            if not text:
+                # The model returned no tool calls and no text. This is a
+                # transient blip, not an unavailable-Gemini condition, so we
+                # must NOT raise RuntimeError here — that maps to 503 and
+                # would wrongly swap the whole home page to the fallback
+                # dashboard over one empty reply. Say so honestly instead of
+                # handing the user a blank bubble, and keep whatever
+                # proposals/navigation earlier iterations already produced.
+                text = (
+                    "I wasn't able to produce an answer that time. "
+                    "Could you try rephrasing your question?"
+                )
             return AssistantResult(
-                text=(response.text or "").strip(),
+                text=text,
                 proposal_ids=proposal_ids,
                 navigate=navigate,
                 turns=turns,

@@ -6,10 +6,14 @@ assistant conversations show up in the existing conversation-list endpoints
 without any new persistence surface.
 
 Error mapping is safety-critical here: SpendCapReached -> 429 and
-RuntimeError (Gemini unavailable) -> 503 must stay distinct. The frontend
-uses that distinction to decide which message to show above the fallback
-camera dashboard — collapsing the two would collapse a physical-security
-UX guarantee, not just an HTTP status code.
+RuntimeError / upstream google-genai errors (Gemini unavailable) -> 503
+must stay distinct. The frontend uses that distinction to decide which
+message to show above the fallback camera dashboard — collapsing the two
+would collapse a physical-security UX guarantee, not just an HTTP status
+code. An upstream Gemini quota/server error (google.genai.errors.APIError)
+is deliberately mapped to 503, not 429: our 429 means "your org's daily AI
+budget is exhausted," and labelling an upstream Gemini problem that way
+would tell the user something false about their own account.
 """
 
 import logging
@@ -40,6 +44,17 @@ from app.services.chat_service import ChatTurn
 from app.services.digest.spend_tracker import SpendTracker
 
 logger = logging.getLogger(__name__)
+
+# Defensive import: the google-genai package (or the API key) may be absent
+# in some environments (see gemini.py's own graceful-degradation comment).
+# An ImportError here at module load would take down the whole API, so we
+# fall back to a tuple of no types — `isinstance(exc, ())` is always False,
+# which just means the upstream-error branch below never matches and any
+# genai-raised error falls through to the generic 500 path, same as today.
+try:
+    from google.genai.errors import APIError as GenaiAPIError  # type: ignore
+except ImportError:  # pragma: no cover - package not installed in this env
+    GenaiAPIError = ()  # type: ignore[assignment]
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -151,12 +166,28 @@ async def post_message(
             user_message=body.message,
         )
     except SpendCapReached:
+        # Must be checked first and stay 429: this means OUR org's daily AI
+        # budget is exhausted, which is meaningfully different from Gemini
+        # itself being unavailable below.
         raise HTTPException(
             status_code=429,
             detail="Daily AI budget reached for your organisation.",
         )
     except RuntimeError as exc:  # Gemini unavailable / empty response
         raise HTTPException(status_code=503, detail=str(exc))
+    except GenaiAPIError as exc:
+        # Upstream google-genai failure (e.g. Gemini's OWN quota exhausted,
+        # a ClientError with status 429, or a ServerError). This is NOT the
+        # org's spend cap, so it must never be reported as 429 — the
+        # frontend renders that exact status as "your organisation's daily
+        # AI budget is reached," which would be false here. 503 ("assistant
+        # temporarily unavailable") is accurate for any upstream failure and
+        # still triggers the same fallback-dashboard behavior as RuntimeError.
+        logger.warning("assistant: upstream Gemini error: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Assistant is temporarily unavailable. Please try again shortly.",
+        )
 
     assistant_msg = ChatMessage(
         org_id=current.org_id,
