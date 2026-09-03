@@ -9,7 +9,7 @@ from models import BoundingBox
 
 logger = logging.getLogger(__name__)
 
-# COCO-17 keypoint order, as emitted by YOLOv8-pose.
+# COCO-17 keypoint order, as emitted by YOLO26n-pose (same order as YOLOv8-pose).
 KEYPOINT_NAMES = [
     "nose", "left_eye", "right_eye", "left_ear", "right_ear",
     "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
@@ -144,7 +144,8 @@ NUM_KEYPOINTS = 17
 
 
 class PoseDetector:
-    """ONNX-based YOLOv8-pose inference, CPU-only, fail-soft if the model is unavailable."""
+    """ONNX-based YOLO26n-pose inference (raw/non-end2end export — see CLAUDE.md), CPU-only,
+    fail-soft if the model is unavailable."""
 
     def __init__(self):
         self.available = False

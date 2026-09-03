@@ -182,12 +182,11 @@ COCO_CLASSES = [
     "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
 ]
 
-YOLO_NMS_SCORE_THRESHOLD = 0.25
-YOLO_NMS_IOU_THRESHOLD = 0.45
+YOLO_SCORE_THRESHOLD = 0.25
 
 
 class YoloDetector:
-    """ONNX-based YOLOv8n inference, CPU-only, fail-soft if the model is unavailable."""
+    """ONNX-based YOLO26n inference (end-to-end/NMS-free export), CPU-only, fail-soft if the model is unavailable."""
 
     def __init__(self):
         self.available = False
@@ -243,48 +242,29 @@ class YoloDetector:
         return np.expand_dims(chw, axis=0)
 
     def _postprocess(self, output, frame_shape, scale, pad_x, pad_y) -> list:
-        # output shape: (1, 84, N) -> (N, 84): 4 bbox coords (cx,cy,w,h) + 80 class scores
-        preds = output[0].transpose(1, 0)
-        boxes_cxcywh = preds[:, :4]
-        class_scores = preds[:, 4:]
-        class_ids = np.argmax(class_scores, axis=1)
-        confidences = class_scores[np.arange(len(class_scores)), class_ids]
-
-        keep = confidences >= YOLO_NMS_SCORE_THRESHOLD
-        boxes_cxcywh = boxes_cxcywh[keep]
-        class_ids = class_ids[keep]
-        confidences = confidences[keep]
-
-        if len(boxes_cxcywh) == 0:
+        # output shape: (1, 300, 6) end-to-end export -> [x1, y1, x2, y2, confidence, class_id]
+        # in pixel coords relative to the letterboxed input. NMS already ran inside the
+        # exported graph (end2end=True), so no cv2.dnn.NMSBoxes pass is needed here.
+        preds = output[0]
+        confidences = preds[:, 4]
+        keep = confidences >= YOLO_SCORE_THRESHOLD
+        preds = preds[keep]
+        if len(preds) == 0:
             return []
-
-        x1 = boxes_cxcywh[:, 0] - boxes_cxcywh[:, 2] / 2
-        y1 = boxes_cxcywh[:, 1] - boxes_cxcywh[:, 3] / 2
-        nms_boxes = np.stack([x1, y1, boxes_cxcywh[:, 2], boxes_cxcywh[:, 3]], axis=1)
-
-        indices = cv2.dnn.NMSBoxes(
-            nms_boxes.tolist(), confidences.tolist(),
-            YOLO_NMS_SCORE_THRESHOLD, YOLO_NMS_IOU_THRESHOLD,
-        )
-        if len(indices) == 0:
-            return []
-        indices = np.array(indices).flatten()
 
         frame_h, frame_w = frame_shape[0], frame_shape[1]
         detections = []
-        for i in indices:
-            bx1, by1, bw, bh = nms_boxes[i]
-            bx2, by2 = bx1 + bw, by1 + bh
+        for bx1, by1, bx2, by2, confidence, raw_class_id in preds:
             fx1 = max(0, min(frame_w, (bx1 - pad_x) / scale))
             fy1 = max(0, min(frame_h, (by1 - pad_y) / scale))
             fx2 = max(0, min(frame_w, (bx2 - pad_x) / scale))
             fy2 = max(0, min(frame_h, (by2 - pad_y) / scale))
 
-            class_id = int(class_ids[i])
-            coco_class = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else "unknown"
+            class_id = int(raw_class_id)
+            coco_class = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "unknown"
             detections.append(YoloDetection(
                 coco_class=coco_class,
-                confidence=float(confidences[i]),
+                confidence=float(confidence),
                 bbox=BoundingBox(x1=int(fx1), y1=int(fy1), x2=int(fx2), y2=int(fy2), label=coco_class),
             ))
         return detections

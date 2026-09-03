@@ -123,8 +123,8 @@ class Settings(BaseSettings):
     # as a separate copy since backend and worker are separate deployable
     # services with no shared package today.
     local_detection_enabled: bool = True
-    yolo_model_path: str = "models/yolov8n.onnx"
-    pose_model_path: str = "models/yolov8n-pose.onnx"
+    yolo_model_path: str = "models/yolo26n.onnx"
+    pose_model_path: str = "models/yolo26n-pose.onnx"
     yolo_input_size: int = 640
     pose_input_size: int = 640
     pose_keypoint_confidence: float = 0.3

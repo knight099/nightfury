@@ -60,20 +60,22 @@
 - This is the #1 cost-saving measure — without it, Gemini bills explode
 
 ### YOLO Local Detection Gate
-- After motion + frame sampling, a local YOLOv8n ONNX model (`yolo_detector.py`, CPU-only via onnxruntime) runs before any Gemini call
+- After motion + frame sampling, a local YOLO26n ONNX model (`yolo_detector.py`, CPU-only via onnxruntime) runs before any Gemini call
 - No relevant object (mapped from `enabled_events`) in frame → drop, no Gemini call at all
 - High-confidence person/vehicle/animal/intrusion (>= `YOLO_FASTPATH_CONFIDENCE`, default 0.75) → event emitted directly from YOLO, no Gemini call
 - Mid-confidence (between `YOLO_ESCALATE_FLOOR` and fastpath threshold) or any other enabled event type (loitering, custom types) → escalates to Gemini exactly as before
-- Model file lives at `models/yolov8n.onnx` (path configurable via `YOLO_MODEL_PATH`); if missing or fails to load, `YoloDetector.available` is `False` and every frame escalates to Gemini — fail-soft, never crashes the worker
-- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"`, then move the resulting `yolov8n.onnx` into `models/`
+- Model file lives at `models/yolo26n.onnx` (path configurable via `YOLO_MODEL_PATH`); if missing or fails to load, `YoloDetector.available` is `False` and every frame escalates to Gemini — fail-soft, never crashes the worker
+- Exported **end-to-end (`end2end=True`, the export default)**: the ONNX graph does its own NMS and returns a fixed `(1, 300, 6)` tensor of `[x1, y1, x2, y2, confidence, class_id]` in pixel coords relative to the letterboxed 640 input — `_postprocess` just confidence-filters and undoes the letterbox, no `cv2.dnn.NMSBoxes` pass
+- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolo26n.pt').export(format='onnx', end2end=True)"`, then move the resulting `yolo26n.onnx` into `models/`
 
 ### Pose-Based Step-Sequence Tracking
-- For cameras with a non-empty `step_sequence` configured, a local YOLOv8-pose ONNX model (`pose_detector.py`, CPU-only via onnxruntime) runs after the YOLO gate stage, independent of its drop/emit/escalate decision
+- For cameras with a non-empty `step_sequence` configured, a local YOLO26n-pose ONNX model (`pose_detector.py`, CPU-only via onnxruntime) runs after the YOLO gate stage, independent of its drop/emit/escalate decision
 - Detected people are tracked frame-to-frame with a greedy IoU tracker (`person_tracker.py`, no re-identification — a lost track starts a fresh sequence on reappearance)
 - Each tracked person's (zone, pose label) is checked against the camera's ordered `step_sequence` by `sequence_engine.py`; skipping ahead, stalling past a step's `max_seconds`, or completing all steps emits a `step_skipped` / `step_timeout` / `sequence_completed` event directly — no Gemini call
 - Pose labels are geometric heuristics on 17 COCO keypoints: `standing`, `bending`, `crouching`, `sitting`, `reaching`, `unknown` (see `classify_pose` in `pose_detector.py`)
-- Model file lives at `models/yolov8n-pose.onnx` (path configurable via `POSE_MODEL_PATH`); if missing or fails to load, `PoseDetector.available` is `False` and the stage is skipped entirely — fail-soft, never crashes the worker
-- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolov8n-pose.pt').export(format='onnx')"`, then move the resulting `yolov8n-pose.onnx` into `models/`
+- Model file lives at `models/yolo26n-pose.onnx` (path configurable via `POSE_MODEL_PATH`); if missing or fails to load, `PoseDetector.available` is `False` and the stage is skipped entirely — fail-soft, never crashes the worker
+- Exported **raw, non-end-to-end (`end2end=False`)** — deliberately, unlike the detection model above: Ultralytics' end-to-end/NMS-free export output layout for the pose task isn't documented, so `_postprocess`'s existing `(1, 56, N)` (4 bbox + 1 conf + 17*3 keypoints) parsing + `cv2.dnn.NMSBoxes` path is kept as-is pending verification against a real export
+- To (re)generate the model: `pip install ultralytics && python3 -c "from ultralytics import YOLO; YOLO('yolo26n-pose.pt').export(format='onnx', end2end=False)"`, then move the resulting `yolo26n-pose.onnx` into `models/`. **Before deploying, inspect the exported model's actual output shape** to confirm it still matches the `(1, 56, N)` layout `_postprocess` assumes — YOLO26's DFL-free box regression may have changed the raw head's channel layout
 
 ### Frame Sampling
 - Two states: IDLE (1 fps to AI) and ACTIVE (5 fps to AI)
