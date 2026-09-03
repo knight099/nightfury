@@ -1,0 +1,94 @@
+flowchart LR
+    classDef source fill:#f7f7f7,stroke:#1f2937,stroke-width:1.5px,color:#111827
+    classDef api fill:#dfeeff,stroke:#1d4ed8,stroke-width:1.5px,color:#0f172a
+    classDef process fill:#dff7ef,stroke:#0f766e,stroke-width:1.5px,color:#0f172a
+    classDef queue fill:#fff7d6,stroke:#ca8a04,stroke-width:1.5px,color:#111827
+    classDef app fill:#f3e8ff,stroke:#7c3aed,stroke-width:1.5px,color:#111827
+    classDef target fill:#e0f2fe,stroke:#0284c7,stroke-width:1.5px,color:#0f172a
+    classDef shared fill:#e5e7eb,stroke:#374151,stroke-width:1.5px,color:#111827
+
+    subgraph REG[Regional Source Systems]
+        NA[NA \n Salesforce / WPCx / CCM]
+        EU[EU \n Salesforce / WPCx / CCM]
+        AP[AP \n Salesforce / WPCx / CCM]
+        LA[LA \n Salesforce / WPCx / CCM]
+    end
+    class NA,EU,AP,LA source
+
+    subgraph EXP[Experience Layer]
+        EAPI1[phm-na-coicmgmt-eapi]
+        EAPI2[phm-eu-coicmgmt-eapi]
+        EAPI3[phm-ap-coicmgmt-eapi]
+        EAPI4[phm-la-coicmgmt-eapi]
+    end
+    class EAPI1,EAPI2,EAPI3,EAPI4 api
+
+    subgraph PROC[Process / System Layer]
+        PAPI[phm-coicmgmt-order-papi]
+        SAPI[phm-coicmgmt-order-sapi]
+    end
+    class PAPI,SAPI process
+
+    subgraph MSG[Messaging / Integration Layer]
+        Q1[Create patient/order queue]
+        Q2[PubSub / SNS / SQS]
+        Q3[Event / milestone queue]
+    end
+    class Q1,Q2,Q3 queue
+
+    subgraph APP[Consumer / Worker Apps]
+        APP1[pubsub-na-updates-consumer-app]
+        APP2[phm-eu-updates-consumer-app]
+        APP3[phm-ap-updates-consumer-app]
+        APP4[phm-atsm-updates-consumer-app]
+    end
+    class APP1,APP2,APP3,APP4 app
+
+    subgraph OUT[Downstream / Target Systems]
+        SF[Salesforce / COIC System]
+        ERP[ERP / CRM / Partner Systems]
+        DDB[(DynamoDB / Metadata Store)]
+    end
+    class SF,ERP,DDB target
+
+    subgraph SHARED[Shared Reusable Layer]
+        COMMON[Common Layer\nshared auth, AWS wrappers, validators, utilities]
+        AUTH[Common Authorizer]
+    end
+    class COMMON,AUTH shared
+
+    NA --> EAPI1
+    EU --> EAPI2
+    AP --> EAPI3
+    LA --> EAPI4
+
+    EAPI1 --> PAPI
+    EAPI2 --> PAPI
+    EAPI3 --> PAPI
+    EAPI4 --> PAPI
+
+    PAPI --> SAPI
+    SAPI --> Q1
+    Q1 --> Q2
+    Q2 --> Q3
+
+    Q3 --> APP1
+    Q3 --> APP2
+    Q3 --> APP3
+    Q3 --> APP4
+
+    APP1 --> SF
+    APP2 --> ERP
+    APP3 --> ERP
+    APP4 --> SF
+
+    EAPI1 -. shared utilities .-> COMMON
+    EAPI2 -. shared utilities .-> COMMON
+    PAPI -. shared utilities .-> COMMON
+    SAPI -. shared utilities .-> COMMON
+    APP1 -. auth + helper libs .-> COMMON
+    APP2 -. auth + helper libs .-> COMMON
+    AUTH --> COMMON
+
+    SF --> DDB
+    ERP --> DDB
